@@ -59,6 +59,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   const raw = await readFile(cacheFile, 'utf8');
   const persisted = JSON.parse(raw);
   assert.equal(persisted.servers.length, 1);
+  assert.equal(persisted.servers[0].playerCountSource, 'gamedig_live');
 
   const restored = createRefreshService({
     config: createConfig({ snapshotCacheFile: cacheFile }),
@@ -72,5 +73,6 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(restoredOk, true);
   const snapshot = restored.getSnapshot();
   assert.equal(snapshot.count, 1);
+  assert.equal(snapshot.servers[0].playerCountSource, 'gamedig_live');
   assert.equal(snapshot.freshness, 'fresh');
 });

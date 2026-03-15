@@ -94,10 +94,12 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
             if (!country || !config.allowedCountriesSet.has(country)) return null;
 
             const playersFromQuery = await gameDigService.queryPlayers(parsed.host, parsed.port);
+            const playerCountSource = playersFromQuery == null ? 'steam_fallback' : 'gamedig_live';
             return {
               name: server.name,
               ip: parsed.normalized,
               players: playersFromQuery ?? server.players,
+              playerCountSource,
               maxplayers: server.max_players,
               map: server.map,
               country
