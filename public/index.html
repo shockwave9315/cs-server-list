@@ -100,11 +100,7 @@
       padding: 40px;
       color: #888;
     }
-    #countdown {
-      display: inline-block;
-      width: 22px;
-      color: #f0a500;
-    }
+
   </style>
 </head>
 <body>
@@ -113,7 +109,7 @@
 
   <div class="status">
     Ostatnia aktualizacja: <span id="lastUpdate">—</span> &nbsp;|&nbsp;
-    Odświeżenie za: <span id="countdown">30</span>s
+<button onclick="manualRefresh()" class="btn-refresh">🔄 Odśwież</button>
   </div>
 
   <table>
