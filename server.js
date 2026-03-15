@@ -27,7 +27,7 @@ async function fetchServerList() {
   const res = await axios.get(url, {
     params: {
       key: STEAM_API_KEY,
-      filter: `\\appid\\730\\map\\${TARGET_MAP}`,
+      filter: `\\appid\\4465480\\map\\${TARGET_MAP}`,
       limit: 500
     },
     timeout: 10000
