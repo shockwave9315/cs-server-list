@@ -193,11 +193,20 @@
       btn.textContent = '⏳ Szukam...';
       btn.disabled = true;
 
-      await fetch('/api/refresh', { method: 'POST' });
-      await fetchServers();
-
-      btn.textContent = '🔄 Odśwież';
-      btn.disabled = false;
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        if (!res.ok && res.status !== 202) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || data.status || 'Refresh failed');
+        }
+        await fetchServers();
+      } catch (err) {
+        document.getElementById('serverList').innerHTML =
+          '<tr><td colspan="5" class="empty">Nie udało się odświeżyć serwerów.</td></tr>';
+      } finally {
+        btn.textContent = '🔄 Odśwież';
+        btn.disabled = false;
+      }
     }
 
     // Załaduj dane przy starcie strony
