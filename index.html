@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>CS Quick Connect</title>
+</head>
+
+<body>
+
+<h2>Serwery CS</h2>
+
+<div id="servers"></div>
+
+<script>
+fetch("servers.json")
+.then(r => r.json())
+.then(data => {
+
+const container = document.getElementById("servers")
+
+data.forEach(server => {
+
+const link = document.createElement("a")
+
+link.href = "steam://connect/" + server.ip
+link.innerText = server.name + " (" + server.players + "/" + server.max + ")"
+
+container.appendChild(link)
+container.appendChild(document.createElement("br"))
+
+})
+
+})
+</script>
+
+</body>
+</html>
