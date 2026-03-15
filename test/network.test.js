@@ -23,3 +23,15 @@ test('mapLimit isolates mapper item failures when handler is provided', async ()
   assert.deepEqual(result, [2, null, 6]);
   assert.deepEqual(errors, [{ message: 'boom', item: 2 }]);
 });
+
+test('mapLimit throws on invalid concurrency limit', async () => {
+  await assert.rejects(() => mapLimit([1], 0, async (item) => item), {
+    name: 'RangeError',
+    message: 'mapLimit limit must be a positive integer'
+  });
+
+  await assert.rejects(() => mapLimit([1], 1.5, async (item) => item), {
+    name: 'RangeError',
+    message: 'mapLimit limit must be a positive integer'
+  });
+});
