@@ -1,11 +1,10 @@
+import 'dotenv/config';
 import express from 'express';
 import { GameDig } from 'gamedig';
 import axios from 'axios';
-import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import dgram from 'dgram';
-import dns from 'dns';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,6 +12,7 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = 3000;
 
+const STEAM_API_KEY = process.env.STEAM_API_KEY;
 const ALLOWED_COUNTRIES = ['PL', 'DE'];
 const TARGET_MAP = 'de_dust2';
 const MIN_SLOTS = 8;
@@ -21,66 +21,18 @@ const MAX_SLOTS = 10;
 let cachedServers = [];
 let lastUpdate = null;
 
-// Zapytanie UDP do Steam Master Server
-function queryMasterServer() {
-  return new Promise((resolve, reject) => {
-    const client = dgram.createSocket('udp4');
-    const servers = [];
-    let resolved = false;
-
-    const filter = '\\appid\\730\\map\\' + TARGET_MAP;
-    const request = Buffer.concat([
-      Buffer.from([0x31, 0xFF]),
-      Buffer.from('0.0.0.0:0\0'),
-      Buffer.from(filter + '\0')
-    ]);
-
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        try { client.close(); } catch {}
-        console.log('Master Server timeout — zebrano ' + servers.length + ' serwerów');
-        resolve(servers);
-      }
-    }, 8000);
-
-    client.on('message', (msg) => {
-      let offset = 6;
-      while (offset + 6 <= msg.length) {
-        const ip = msg[offset] + '.' + msg[offset+1] + '.' + msg[offset+2] + '.' + msg[offset+3];
-        const port = (msg[offset+4] << 8) | msg[offset+5];
-        offset += 6;
-
-        if (ip === '0.0.0.0' && port === 0) {
-          if (!resolved) {
-            resolved = true;
-            clearTimeout(timeout);
-            try { client.close(); } catch {}
-            resolve(servers);
-          }
-          return;
-        }
-        servers.push({ ip, port });
-      }
-    });
-
-    client.on('error', (err) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        try { client.close(); } catch {}
-        reject(err);
-      }
-    });
-
-    dns.resolve4('hl2master.steampowered.com', (err, addresses) => {
-      if (err) return reject(err);
-      console.log('Master Server IP:', addresses[0]);
-      client.send(request, 27011, addresses[0], (err) => {
-        if (err) reject(err);
-      });
-    });
+// Pobiera listę serwerów ze Steam Web API
+async function fetchServerList() {
+  const url = 'https://api.steampowered.com/IGameServersService/GetServerList/v1/';
+  const res = await axios.get(url, {
+    params: {
+      key: STEAM_API_KEY,
+      filter: `\\appid\\730\\map\\${TARGET_MAP}`,
+      limit: 500
+    },
+    timeout: 10000
   });
+  return res.data?.response?.servers || [];
 }
 
 // Sprawdza kraj IP
@@ -95,7 +47,7 @@ async function getCountry(ip) {
   }
 }
 
-// Odpytuje serwer o szczegóły
+// Odpytuje serwer o szczegóły (gracze online)
 async function queryServer(ip, port) {
   try {
     const state = await GameDig.query({
@@ -115,40 +67,45 @@ async function queryServer(ip, port) {
 async function refreshServers() {
   console.log('\n[' + new Date().toLocaleTimeString() + '] Rozpoczynam odświeżanie...');
   try {
-    const rawServers = await queryMasterServer();
-    console.log('Serwery z Master Server:', rawServers.length);
+    const rawServers = await fetchServerList();
+    console.log('Serwery z Steam API:', rawServers.length);
 
-    if (rawServers.length === 0) {
-      console.log('Brak serwerów z Master Server — sprawdź połączenie UDP.');
-      return;
-    }
+    // Filtruj po slotach już tutaj żeby nie odpytywać niepotrzebnych
+    const slotFiltered = rawServers.filter(s =>
+      s.max_players >= MIN_SLOTS && s.max_players <= MAX_SLOTS
+    );
+    console.log('Po filtrze slotów:', slotFiltered.length);
 
     const filtered = [];
 
-    // Bierzemy pierwsze 150 serwerów żeby nie przeciążać ip-api.com
-    for (const { ip, port } of rawServers.slice(0, 150)) {
+    for (const server of slotFiltered) {
+      const [ip, portStr] = server.addr.split(':');
+      const port = parseInt(portStr) || 27015;
+
+      // Sprawdź kraj
       const country = await getCountry(ip);
       if (!ALLOWED_COUNTRIES.includes(country)) continue;
 
-      console.log('PL/DE znaleziono:', ip + ':' + port, '(' + country + ') — odpytuję...');
+      console.log('PL/DE:', server.addr, '(' + country + ') —', server.name);
 
+      // Odpytaj serwer o aktualną liczbę graczy
       const info = await queryServer(ip, port);
-      if (!info) continue;
-
-      if (info.map !== TARGET_MAP) continue;
-      if (info.maxplayers < MIN_SLOTS || info.maxplayers > MAX_SLOTS) continue;
+      const players = info ? info.players.length : server.players;
 
       filtered.push({
-        name: info.name,
-        ip: ip + ':' + port,
-        players: info.players.length,
-        maxplayers: info.maxplayers,
-        map: info.map,
+        name: server.name,
+        ip: server.addr,
+        players: players,
+        maxplayers: server.max_players,
+        map: server.map,
         country: country
       });
 
-      console.log('✓ Dodano:', info.name, ip + ':' + port);
+      console.log('✓ Dodano:', server.name, server.addr);
     }
+
+    // Sortuj — najpierw pełniejsze serwery
+    filtered.sort((a, b) => b.players - a.players);
 
     cachedServers = filtered;
     lastUpdate = new Date().toISOString();
