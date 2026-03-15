@@ -100,7 +100,16 @@
       padding: 40px;
       color: #888;
     }
-
+    .btn-refresh {
+  background: none;
+  border: 1px solid #f0a500;
+  color: #f0a500;
+  padding: 4px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+    }
+    .btn-refresh:hover { background: #f0a50022; }
   </style>
 </head>
 <body>
@@ -187,15 +196,9 @@
       }
     }
 
-    // Odliczanie do odświeżenia
-    setInterval(() => {
-      countdown--;
-      document.getElementById('countdown').textContent = countdown;
-      if (countdown <= 0) {
-        countdown = 30;
-        fetchServers();
-      }
-    }, 1000);
+    function manualRefresh() {
+  fetchServers();
+}
 
     fetchServers(); // Od razu przy załadowaniu strony
   </script>
