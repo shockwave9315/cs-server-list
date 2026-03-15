@@ -118,8 +118,8 @@ app.get('/api/servers', (req, res) => {
 });
 
 app.post('/api/refresh', async (req, res) => {
-  res.json({ status: 'started' });
   await refreshServers();
+  res.json({ status: 'done' });
 });
 
 app.listen(PORT, () => {
