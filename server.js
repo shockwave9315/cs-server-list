@@ -5,7 +5,6 @@ import axios from 'axios';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -21,7 +20,6 @@ const MAX_SLOTS = 10;
 let cachedServers = [];
 let lastUpdate = null;
 
-// Pobiera listę serwerów ze Steam Web API
 async function fetchServerList() {
   const url = 'https://api.steampowered.com/IGameServersService/GetServerList/v1/';
   const res = await axios.get(url, {
@@ -35,7 +33,6 @@ async function fetchServerList() {
   return res.data?.response?.servers || [];
 }
 
-// Sprawdza kraj IP
 async function getCountry(ip) {
   try {
     const res = await axios.get('http://ip-api.com/json/' + ip + '?fields=countryCode', {
@@ -47,7 +44,6 @@ async function getCountry(ip) {
   }
 }
 
-// Odpytuje serwer o szczegóły (gracze online)
 async function queryServer(ip, port) {
   try {
     const state = await GameDig.query({
@@ -63,14 +59,12 @@ async function queryServer(ip, port) {
   }
 }
 
-// Główna funkcja odświeżająca listę
 async function refreshServers() {
   console.log('\n[' + new Date().toLocaleTimeString() + '] Rozpoczynam odświeżanie...');
   try {
     const rawServers = await fetchServerList();
     console.log('Serwery z Steam API:', rawServers.length);
 
-    // Filtruj po slotach już tutaj żeby nie odpytywać niepotrzebnych
     const slotFiltered = rawServers.filter(s =>
       s.max_players >= MIN_SLOTS && s.max_players <= MAX_SLOTS
     );
@@ -82,13 +76,11 @@ async function refreshServers() {
       const [ip, portStr] = server.addr.split(':');
       const port = parseInt(portStr) || 27015;
 
-      // Sprawdź kraj
       const country = await getCountry(ip);
       if (!ALLOWED_COUNTRIES.includes(country)) continue;
 
       console.log('PL/DE:', server.addr, '(' + country + ') —', server.name);
 
-      // Odpytaj serwer o aktualną liczbę graczy
       const info = await queryServer(ip, port);
       const players = info ? info.players.length : server.players;
 
@@ -104,7 +96,6 @@ async function refreshServers() {
       console.log('✓ Dodano:', server.name, server.addr);
     }
 
-    // Sortuj — najpierw pełniejsze serwery
     filtered.sort((a, b) => b.players - a.players);
 
     cachedServers = filtered;
@@ -126,8 +117,12 @@ app.get('/api/servers', (req, res) => {
   });
 });
 
+app.post('/api/refresh', async (req, res) => {
+  res.json({ status: 'started' });
+  await refreshServers();
+});
+
 app.listen(PORT, () => {
   console.log('Serwer działa na http://localhost:' + PORT);
   refreshServers();
-  setInterval(refreshServers, 30 * 1000);
 });

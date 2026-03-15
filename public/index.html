@@ -29,6 +29,10 @@
       margin-bottom: 20px;
       font-size: 0.85rem;
       color: #aaa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
     }
     .status span { color: #4ade80; }
     table {
@@ -40,9 +44,7 @@
       border-radius: 10px;
       overflow: hidden;
     }
-    thead tr {
-      background: #0f3460;
-    }
+    thead tr { background: #0f3460; }
     th {
       padding: 14px 16px;
       text-align: left;
@@ -58,10 +60,7 @@
     }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #1a2a4a; }
-    .players {
-      font-weight: bold;
-      color: #4ade80;
-    }
+    .players { font-weight: bold; color: #4ade80; }
     .players.full { color: #f87171; }
     .flag { font-size: 1.2rem; }
     .btn-group { display: flex; gap: 8px; align-items: center; }
@@ -90,26 +89,22 @@
     }
     .btn-copy:hover { background: #1a4a80; }
     .btn-copy.copied { color: #4ade80; border-color: #4ade80; }
+    .btn-refresh {
+      background: none;
+      border: 1px solid #f0a500;
+      color: #f0a500;
+      padding: 6px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .btn-refresh:hover { background: #f0a50022; }
+    .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
     .empty {
       text-align: center;
       padding: 40px;
       color: #888;
     }
-    .loader {
-      text-align: center;
-      padding: 40px;
-      color: #888;
-    }
-    .btn-refresh {
-  background: none;
-  border: 1px solid #f0a500;
-  color: #f0a500;
-  padding: 4px 12px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 0.85rem;
-    }
-    .btn-refresh:hover { background: #f0a50022; }
   </style>
 </head>
 <body>
@@ -117,8 +112,8 @@
   <p class="subtitle">de_dust2 · 8–10 slotów · Polska & Niemcy</p>
 
   <div class="status">
-    Ostatnia aktualizacja: <span id="lastUpdate">—</span> &nbsp;|&nbsp;
-<button onclick="manualRefresh()" class="btn-refresh">🔄 Odśwież</button>
+    <span>Ostatnia aktualizacja: <span id="lastUpdate">—</span></span>
+    <button class="btn-refresh" onclick="manualRefresh()">🔄 Odśwież</button>
   </div>
 
   <table>
@@ -132,13 +127,11 @@
       </tr>
     </thead>
     <tbody id="serverList">
-      <tr><td colspan="5" class="loader">Ładowanie...</td></tr>
+      <tr><td colspan="5" class="empty">Kliknij Odśwież aby załadować serwery.</td></tr>
     </tbody>
   </table>
 
   <script>
-    let countdown = 30;
-
     function getFlag(country) {
       return country === 'PL' ? '🇵🇱' : country === 'DE' ? '🇩🇪' : '🌍';
     }
@@ -158,12 +151,11 @@
       try {
         const res = await fetch('/api/servers');
         const data = await res.json();
-
         const tbody = document.getElementById('serverList');
-        const lastUpdate = document.getElementById('lastUpdate');
 
         if (data.lastUpdate) {
-          lastUpdate.textContent = new Date(data.lastUpdate).toLocaleTimeString('pl-PL');
+          document.getElementById('lastUpdate').textContent =
+            new Date(data.lastUpdate).toLocaleTimeString('pl-PL');
         }
 
         if (!data.servers || data.servers.length === 0) {
@@ -182,7 +174,7 @@
               <td>${s.map}</td>
               <td>
                 <div class="btn-group">
-                  <a class="btn-connect" href="steam://connect/${s.ip}">▶ Connect</a>
+                  <a class="btn-connect" href="steam://run/4465480//+connect ${s.ip}">▶ Connect</a>
                   <button class="btn-copy" onclick="copyToClipboard('${connectCmd}', this)">Kopiuj connect</button>
                 </div>
               </td>
@@ -196,11 +188,20 @@
       }
     }
 
-    function manualRefresh() {
-  fetchServers();
-}
+    async function manualRefresh() {
+      const btn = document.querySelector('.btn-refresh');
+      btn.textContent = '⏳ Szukam...';
+      btn.disabled = true;
 
-    fetchServers(); // Od razu przy załadowaniu strony
+      await fetch('/api/refresh', { method: 'POST' });
+      await fetchServers();
+
+      btn.textContent = '🔄 Odśwież';
+      btn.disabled = false;
+    }
+
+    // Załaduj dane przy starcie strony
+    fetchServers();
   </script>
 </body>
 </html>
