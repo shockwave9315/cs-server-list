@@ -20,13 +20,13 @@ export function createApiRouter({ refreshService, config }) {
     }
 
     const result = await refreshService.refreshServers('manual');
-    if (result.busy) {
+    if (result.status === 'busy') {
       return res.status(202).json({ status: 'busy' });
     }
-    if (!result.ok) {
-      return res.status(500).json({ status: 'failed', error: result.error });
+    if (result.status === 'error') {
+      return res.status(500).json({ status: 'error', error: result.error });
     }
-    return res.json({ status: 'done', count: result.count });
+    return res.json({ status: 'success', count: result.count });
   });
 
   return router;

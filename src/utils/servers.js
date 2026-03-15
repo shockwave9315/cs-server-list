@@ -1,3 +1,11 @@
+function parsePort(raw) {
+  if (raw === undefined || raw === '') return 27015;
+  if (!/^\d+$/.test(raw)) return null;
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return port;
+}
+
 export function parseServerAddr(addr) {
   if (!addr || typeof addr !== 'string') return null;
   const value = addr.trim();
@@ -6,26 +14,44 @@ export function parseServerAddr(addr) {
   if (value.startsWith('[')) {
     const end = value.indexOf(']');
     if (end < 0) return null;
-    const host = value.slice(1, end);
+
+    const host = value.slice(1, end).trim();
+    if (!host || !host.includes(':')) return null;
+
     const portPart = value.slice(end + 1);
-    const port = portPart.startsWith(':') ? Number.parseInt(portPart.slice(1), 10) : 27015;
+    if (portPart && !portPart.startsWith(':')) return null;
+
+    const port = parsePort(portPart.startsWith(':') ? portPart.slice(1) : undefined);
+    if (port === null) return null;
+
     return {
       host,
-      port: Number.isInteger(port) ? port : 27015,
-      normalized: `[${host}]:${Number.isInteger(port) ? port : 27015}`
+      port,
+      normalized: `[${host}]:${port}`
     };
   }
 
-  const lastColon = value.lastIndexOf(':');
-  if (lastColon <= 0) return { host: value, port: 27015, normalized: `${value}:27015` };
+  if (value.includes(':')) {
+    const parts = value.split(':');
+    if (parts.length !== 2) return null;
 
-  const host = value.slice(0, lastColon);
-  const port = Number.parseInt(value.slice(lastColon + 1), 10);
-  const normalizedPort = Number.isInteger(port) ? port : 27015;
+    const host = parts[0].trim();
+    if (!host) return null;
+
+    const port = parsePort(parts[1]);
+    if (port === null) return null;
+
+    return {
+      host,
+      port,
+      normalized: `${host}:${port}`
+    };
+  }
+
   return {
-    host,
-    port: normalizedPort,
-    normalized: `${host}:${normalizedPort}`
+    host: value,
+    port: 27015,
+    normalized: `${value}:27015`
   };
 }
 

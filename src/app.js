@@ -14,13 +14,24 @@ export function createApp({ config, refreshService }) {
 
   app.get('/health', (req, res) => {
     const snapshot = refreshService.getSnapshot();
-    const healthy = snapshot.lastSuccessAt !== null;
-    res.status(healthy ? 200 : 503).json({
-      status: healthy ? 'ok' : 'degraded',
-      env: config.env,
+
+    if (snapshot.freshness === 'never_succeeded') {
+      return res.status(503).json({
+        status: 'degraded',
+        reason: snapshot.freshness,
+        refreshInProgress: snapshot.refreshInProgress,
+        lastError: snapshot.lastError
+      });
+    }
+
+    const stale = snapshot.freshness === 'stale';
+    return res.status(stale ? 503 : 200).json({
+      status: stale ? 'degraded' : 'ok',
+      reason: snapshot.freshness,
       refreshInProgress: snapshot.refreshInProgress,
       lastSuccessAt: snapshot.lastSuccessAt,
-      stale: snapshot.stale
+      ageMs: snapshot.ageMs,
+      lastError: snapshot.lastError
     });
   });
 
