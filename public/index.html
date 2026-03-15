@@ -133,45 +133,87 @@
   </table>
 
   <script>
+    const refreshCooldownMs = 1500;
+    let lastManualRefreshAt = 0;
+
     function getFlag(country) {
       return country === 'PL' ? '🇵🇱' : country === 'DE' ? '🇩🇪' : '🌍';
     }
 
-    function copyToClipboard(text, btn) {
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = '✓ Skopiowano';
+    function setCopyButtonState(btn, label, success) {
+      btn.textContent = label;
+      if (success) {
         btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = 'Kopiuj connect';
-          btn.classList.remove('copied');
-        }, 2000);
-      });
+      } else {
+        btn.classList.remove('copied');
+      }
+
+      setTimeout(() => {
+        btn.textContent = 'Kopiuj connect';
+        btn.classList.remove('copied');
+      }, 2000);
     }
 
+    async function fallbackCopyText(text) {
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.left = '-9999px';
+      document.body.appendChild(input);
+      input.select();
+
+      try {
+        const copied = document.execCommand('copy');
+        if (!copied) {
+          throw new Error('execCommand copy failed');
+        }
+      } finally {
+        document.body.removeChild(input);
+      }
+    }
+
+    async function copyToClipboard(text, btn) {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else {
+          await fallbackCopyText(text);
+        }
+        setCopyButtonState(btn, '✓ Skopiowano', true);
+      } catch (err) {
+        try {
+          await fallbackCopyText(text);
+          setCopyButtonState(btn, '✓ Skopiowano', true);
+        } catch (fallbackErr) {
+          setCopyButtonState(btn, '✗ Błąd kopiowania', false);
+        }
+      }
+    }
 
     function updateStatus(data) {
       const statusEl = document.getElementById('statusText');
       if (data.refreshInProgress) {
-        statusEl.textContent = 'Status: trwa odświeżanie…';
+        statusEl.textContent = 'Status: trwa odświeżanie live (wyniki mogą się różnić między próbami)…';
         return;
       }
 
       if (data.lastError) {
-        statusEl.textContent = 'Status: błąd odświeżania (' + data.lastError + ')';
+        statusEl.textContent = 'Status: ostatnie odświeżanie nieudane (' + data.lastError + ')';
         return;
       }
 
       if (data.freshness === 'never_succeeded') {
-        statusEl.textContent = 'Status: brak udanego odświeżenia';
+        statusEl.textContent = 'Status: brak udanego odświeżenia live';
         return;
       }
 
       if (data.freshness === 'stale' || (!data.freshness && data.stale)) {
-        statusEl.textContent = 'Status: dane nieświeże';
+        statusEl.textContent = 'Status: dane nieświeże (live query, możliwe różnice przy kolejnym odświeżeniu)';
         return;
       }
 
-      statusEl.textContent = 'Status: OK';
+      statusEl.textContent = 'Status: OK (dane z zapytań live, mogą się chwilowo zmieniać)';
     }
 
     async function fetchServers() {
@@ -199,7 +241,7 @@
             <tr>
               <td class="flag">${getFlag(s.country)}</td>
               <td>${s.name}</td>
-              <td class="players ${isFull ? 'full' : ''}">${s.players}/${s.maxplayers}</td>
+              <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${s.playerCountSource || 'unknown'}">${s.players}/${s.maxplayers}</td>
               <td>${s.map}</td>
               <td>
                 <div class="btn-group">
@@ -212,13 +254,18 @@
         }).join('');
 
       } catch (err) {
-        document.getElementById('serverList').innerHTML =
-          '<tr><td colspan="5" class="empty">Błąd połączenia z backendem.</td></tr>';
+        document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem';
       }
     }
 
     async function manualRefresh() {
       const btn = document.querySelector('.btn-refresh');
+      const now = Date.now();
+      if (now - lastManualRefreshAt < refreshCooldownMs) {
+        return;
+      }
+      lastManualRefreshAt = now;
+
       btn.textContent = '⏳ Szukam...';
       btn.disabled = true;
 
@@ -230,8 +277,8 @@
         }
         await fetchServers();
       } catch (err) {
-        document.getElementById('serverList').innerHTML =
-          '<tr><td colspan="5" class="empty">Nie udało się odświeżyć serwerów.</td></tr>';
+        document.getElementById('statusText').textContent =
+          'Status: nie udało się odświeżyć (pozostawiono poprzednie wyniki)';
       } finally {
         btn.textContent = '🔄 Odśwież';
         btn.disabled = false;
