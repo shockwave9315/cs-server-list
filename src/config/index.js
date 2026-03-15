@@ -41,10 +41,22 @@ export function loadConfig() {
   const countryCacheTtlMs = parseIntEnv('COUNTRY_CACHE_TTL_MS', 60 * 60 * 1000);
   const steamLimit = parseIntEnv('STEAM_LIMIT', 500);
   const workerConcurrency = parseIntEnv('WORKER_CONCURRENCY', 20);
+  const maxStaleMs = parseIntEnv('MAX_STALE_MS', 15 * 60 * 1000);
+  const shutdownRefreshWaitMs = parseIntEnv('SHUTDOWN_REFRESH_WAIT_MS', 3000);
 
   if (workerConcurrency < 1) {
     throw new Error('WORKER_CONCURRENCY must be >= 1');
   }
+
+  if (maxStaleMs < 0) {
+    throw new Error('MAX_STALE_MS must be >= 0');
+  }
+
+  if (shutdownRefreshWaitMs < 0) {
+    throw new Error('SHUTDOWN_REFRESH_WAIT_MS must be >= 0');
+  }
+
+  const allowedCountries = parseCountries(process.env.ALLOWED_COUNTRIES);
 
   return {
     env: process.env.NODE_ENV || 'development',
@@ -52,7 +64,8 @@ export function loadConfig() {
     steamApiKey,
     targetMap: process.env.TARGET_MAP || 'de_dust2',
     appId: process.env.APP_ID || '4465480',
-    allowedCountries: parseCountries(process.env.ALLOWED_COUNTRIES),
+    allowedCountries,
+    allowedCountriesSet: new Set(allowedCountries),
     minSlots,
     maxSlots,
     steamLimit,
@@ -61,6 +74,12 @@ export function loadConfig() {
     manualRefreshToken: process.env.REFRESH_TOKEN || '',
     countryCacheTtlMs,
     geoIpUrl: process.env.GEOIP_URL || 'http://ip-api.com/json',
-    workerConcurrency
+    workerConcurrency,
+    waitForInitialRefresh: parseBoolEnv('WAIT_FOR_INITIAL_REFRESH', false),
+    maxStaleMs,
+    shutdownRefreshWaitMs,
+    snapshotCacheFile: process.env.SNAPSHOT_CACHE_FILE || '',
+    restoreSnapshotOnStartup: parseBoolEnv('RESTORE_SNAPSHOT_ON_STARTUP', true),
+    persistSnapshotOnRefresh: parseBoolEnv('PERSIST_SNAPSHOT_ON_REFRESH', true)
   };
 }

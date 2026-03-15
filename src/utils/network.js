@@ -1,4 +1,4 @@
-export async function mapLimit(items, limit, mapper) {
+export async function mapLimit(items, limit, mapper, options = {}) {
   const results = new Array(items.length);
   let index = 0;
 
@@ -7,7 +7,15 @@ export async function mapLimit(items, limit, mapper) {
       const current = index;
       index += 1;
       if (current >= items.length) return;
-      results[current] = await mapper(items[current], current);
+
+      try {
+        results[current] = await mapper(items[current], current);
+      } catch (error) {
+        if (options.onItemError) {
+          options.onItemError(error, items[current], current);
+        }
+        results[current] = null;
+      }
     }
   }
 
