@@ -41,6 +41,7 @@ function normalizeRestoredServer(server, fallbackSeenAt, staleMissThreshold) {
     ping: typeof server?.ping === 'number' ? server.ping : null,
     playerCountSource: normalizePlayerCountSource(server?.playerCountSource),
     playerList: Array.isArray(server?.playerList) ? server.playerList : null,
+    playerListStatus: typeof server?.playerListStatus === 'string' ? server.playerListStatus : 'unavailable',
     lastSeenAt,
     missedRefreshCount,
     stabilityState: typeof server?.stabilityState === 'string'
@@ -175,7 +176,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
               map: server.map,
               country,
               ping: query?.ping ?? null,
-              playerList: Array.isArray(query?.players) ? query.players : null
+              playerList: Array.isArray(query?.players) ? query.players : null,
+              playerListStatus: typeof query?.playerListStatus === 'string' ? query.playerListStatus : 'unavailable'
             };
           },
           {
@@ -189,12 +191,10 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
         );
 
         const now = new Date().toISOString();
-        const previousByIp = new Map(state.cachedServers.map((server) => [server.ip, server]));
         const seenIps = new Set();
 
         const merged = [];
         for (const server of processed.filter(Boolean)) {
-          const previous = previousByIp.get(server.ip);
           seenIps.add(server.ip);
 
           merged.push({
@@ -205,7 +205,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
             stabilityState: 'stable',
             lastRefreshAt: now,
             ping: typeof server.ping === 'number' ? server.ping : null,
-            playerList: Array.isArray(server.playerList) ? server.playerList : null
+            playerList: Array.isArray(server.playerList) ? server.playerList : null,
+            playerListStatus: typeof server.playerListStatus === 'string' ? server.playerListStatus : 'unavailable'
           });
         }
 
@@ -222,7 +223,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
             lastRefreshAt: now,
             lastSeenAt: coerceIsoString(previous.lastSeenAt) || state.lastSuccessAt || state.lastUpdate || now,
             ping: typeof previous.ping === 'number' ? previous.ping : null,
-            playerList: Array.isArray(previous.playerList) ? previous.playerList : null
+            playerList: Array.isArray(previous.playerList) ? previous.playerList : null,
+            playerListStatus: typeof previous.playerListStatus === 'string' ? previous.playerListStatus : 'unavailable'
           });
         }
 

@@ -141,6 +141,7 @@
     .badge.fallback { border-color: #92400e; color: #fde68a; background: #38220f; }
     .badge.low-ping { border-color: #0f766e; color: #99f6e4; background: #0f2626; }
     .badge.unstable { border-color: #7c2d12; color: #fed7aa; background: #3d1f13; }
+    .badge.related { border-color: #334155; color: #cbd5e1; background: #111827; }
     .ping.good { color: #4ade80; font-weight: 600; }
     .ping.mid { color: #fbbf24; font-weight: 600; }
     .ping.high { color: #f87171; font-weight: 600; }
@@ -302,7 +303,7 @@
     let pendingFetchAfterCurrent = false;
     let latestSnapshot = null;
     let favorites = loadFavorites();
-    let expandedServers = new Set();
+    let expandedServerIp = null;
 
     const state = {
       search: '',
@@ -392,11 +393,24 @@
     }
 
     function renderPlayersList(server) {
-      if (!Array.isArray(server.playerList) || server.playerList.length === 0) {
-        return '<div class="players-list"><div class="empty-state">Brak danych o aktywnych graczach dla tego odświeżenia.</div></div>';
+      const status = server.playerListStatus || 'unavailable';
+      if (!Array.isArray(server.playerList)) {
+        return '<div class="players-list"><div class="empty-state">Lista graczy niedostępna z live query dla tego odświeżenia.</div></div>';
       }
 
-      return '<div class="players-list"><ul>' + server.playerList.map(renderPlayerEntry).join('') + '</ul></div>';
+      if (server.playerList.length > 0) {
+        return '<div class="players-list"><ul>' + server.playerList.map(renderPlayerEntry).join('') + '</ul></div>';
+      }
+
+      if (status === 'empty') {
+        return '<div class="players-list"><div class="empty-state">Brak aktywnych graczy.</div></div>';
+      }
+
+      if (status === 'filtered_invalid') {
+        return '<div class="players-list"><div class="empty-state">Lista graczy została odfiltrowana jako niepoprawna (metadane/placeholdery).</div></div>';
+      }
+
+      return '<div class="players-list"><div class="empty-state">Lista graczy niedostępna z live query dla tego odświeżenia.</div></div>';
     }
 
     function renderServerDetails(server, colspan) {
@@ -430,8 +444,7 @@
 
     function toggleDetails(ip) {
       if (!ip) return;
-      if (expandedServers.has(ip)) expandedServers.delete(ip);
-      else expandedServers.add(ip);
+      expandedServerIp = expandedServerIp === ip ? null : ip;
       applyAndRender();
     }
 
@@ -442,13 +455,45 @@
       return { cls: 'high', label: ping + ' ms' };
     }
 
-    function serverBadges(server, isFull) {
+
+    function getHostPart(ip) {
+      if (typeof ip !== 'string') return '';
+      const idx = ip.lastIndexOf(':');
+      return idx > 0 ? ip.slice(0, idx) : ip;
+    }
+
+    function buildRelatedServerMeta(servers) {
+      const hostCounts = new Map();
+      const nameCounts = new Map();
+
+      for (const server of servers) {
+        const host = getHostPart(server.ip);
+        if (host) hostCounts.set(host, (hostCounts.get(host) || 0) + 1);
+        const nameKey = String(server.name || '').trim().toLowerCase();
+        if (nameKey) nameCounts.set(nameKey, (nameCounts.get(nameKey) || 0) + 1);
+      }
+
+      return { hostCounts, nameCounts };
+    }
+
+    function serverBadges(server, isFull, relatedMeta) {
       const badges = [];
       if (isFull) badges.push('<span class="badge full">full</span>');
       if (server.playerCountSource === 'gamedig_live') badges.push('<span class="badge live">live</span>');
       if (server.playerCountSource === 'steam_fallback') badges.push('<span class="badge fallback">fallback</span>');
       if (typeof server.ping === 'number' && server.ping <= 50) badges.push('<span class="badge low-ping">low ping</span>');
-      if (server.stabilityState && server.stabilityState !== 'stable') badges.push('<span class="badge unstable">unstable</span>');
+      if (server.stabilityState === 'stale' || (Number.isInteger(server.missedRefreshCount) && server.missedRefreshCount >= 2)) {
+        badges.push('<span class="badge unstable">unstable</span>');
+      }
+
+      const host = getHostPart(server.ip);
+      const sameHostCount = host ? (relatedMeta.hostCounts.get(host) || 0) : 0;
+      const nameKey = String(server.name || '').trim().toLowerCase();
+      const sameNameCount = nameKey ? (relatedMeta.nameCounts.get(nameKey) || 0) : 0;
+      if (sameHostCount > 1 || sameNameCount > 1) {
+        badges.push('<span class="badge related" title="Podobna nazwa lub wspólny host — to osobny serwer (inne IP:port)">podobny</span>');
+      }
+
       return badges.join('');
     }
 
@@ -552,14 +597,15 @@
       }
 
       const visibleIps = new Set(filtered.map((server) => server.ip));
-      expandedServers = new Set(Array.from(expandedServers).filter((ip) => visibleIps.has(ip)));
+      if (expandedServerIp && !visibleIps.has(expandedServerIp)) expandedServerIp = null;
+      const relatedMeta = buildRelatedServerMeta(filtered);
 
       tbody.innerHTML = filtered.map((s) => {
         const isFull = s.players >= s.maxplayers;
         const connectCmd = 'connect ' + s.ip;
         const ping = getPingLevel(s.ping);
         const favActive = favorites.has(s.ip);
-        const isExpanded = expandedServers.has(s.ip);
+        const isExpanded = expandedServerIp === s.ip;
         const detailColspan = state.advancedView ? 7 : 6;
         const metaCol = state.advancedView
           ? '<td title="Źródło i stabilność"><span class="muted">' + escapeHtml(s.playerCountSource || 'unknown') + '</span><br>' + escapeHtml(s.stabilityState || 'stable') + '</td>'
@@ -570,8 +616,9 @@
             <td class="flag">${getFlag(s.country)}</td>
             <td>
               <span class="server-name">${escapeHtml(s.name)}</span>
-              <span class="badges">${serverBadges(s, isFull)}</span>
+              <span class="badges">${serverBadges(s, isFull, relatedMeta)}</span>
               <div class="muted" title="Adres serwera">${escapeHtml(s.ip || '—')}</div>
+              ${((getHostPart(s.ip) && (relatedMeta.hostCounts.get(getHostPart(s.ip)) || 0) > 1) || ((relatedMeta.nameCounts.get(String(s.name || '').trim().toLowerCase()) || 0) > 1)) ? '<div class="muted">Osobny wpis: inny port/endpoint.</div>' : ''}
             </td>
             <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${escapeHtml(s.playerCountSource || 'unknown')}">${s.players}/${s.maxplayers}</td>
             <td class="ping ${ping.cls}" title="Ping z live query">${ping.label}</td>
