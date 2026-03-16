@@ -172,6 +172,7 @@
     .btn-copy:hover,
     .btn-fav:hover { background: #1a4a80; }
     .btn-copy.copied { color: #4ade80; border-color: #4ade80; }
+    .btn-copy.alt { padding: 7px 9px; }
     .btn-fav.active { color: #fcd34d; border-color: #f0a500; }
     .btn-refresh {
       background: none;
@@ -189,6 +190,38 @@
       padding: 40px;
       color: #888;
     }
+    tr.expandable-row { cursor: pointer; }
+    tr.expandable-row.expanded td { background: #1a2a4a; }
+    .detail-row td {
+      background: #111b36;
+      border-bottom: 1px solid #1a1a2e;
+      font-size: 0.84rem;
+    }
+    .details-grid {
+      display: grid;
+      gap: 6px 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-bottom: 10px;
+      color: #d8dcef;
+    }
+    .detail-item .label {
+      color: #8ea0c9;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-right: 6px;
+    }
+    .players-list {
+      background: #0f1730;
+      border: 1px solid #22325f;
+      border-radius: 8px;
+      padding: 8px;
+      max-height: 180px;
+      overflow: auto;
+    }
+    .players-list ul { margin: 0; padding-left: 18px; }
+    .players-list li { margin: 3px 0; color: #d9e0f8; }
+    .players-list .empty-state { color: #8e9bc1; }
   </style>
 </head>
 <body>
@@ -235,6 +268,7 @@
       <div class="toggles">
         <label class="toggle"><input id="hideFullToggle" type="checkbox" /> Ukryj pełne</label>
         <label class="toggle"><input id="favoritesOnlyToggle" type="checkbox" /> Tylko ulubione</label>
+        <label class="toggle" title="Tryb zaawansowany pokazuje więcej informacji w tabeli"><input id="advancedViewToggle" type="checkbox" /> Widok zaawansowany</label>
       </div>
     </div>
   </div>
@@ -243,7 +277,7 @@
 
   <table>
     <thead>
-      <tr>
+      <tr id="tableHeadRow">
         <th>Kraj</th>
         <th>Nazwa serwera</th>
         <th>Gracze</th>
@@ -268,6 +302,7 @@
     let pendingFetchAfterCurrent = false;
     let latestSnapshot = null;
     let favorites = loadFavorites();
+    let expandedServers = new Set();
 
     const state = {
       search: '',
@@ -275,7 +310,8 @@
       sort: 'players_desc',
       hideFull: false,
       favoritesOnly: false,
-      autoRefreshSec: 60
+      autoRefreshSec: 60,
+      advancedView: false
     };
 
     function getFlag(country) {
@@ -317,7 +353,7 @@
       applyAndRender();
     }
 
-    function setCopyButtonState(btn, label, success) {
+    function setCopyButtonState(btn, label, success, fallbackLabel = 'Kopiuj connect') {
       btn.textContent = label;
       if (success) {
         btn.classList.add('copied');
@@ -326,9 +362,77 @@
       }
 
       setTimeout(() => {
-        btn.textContent = 'Kopiuj connect';
+        btn.textContent = fallbackLabel;
         btn.classList.remove('copied');
       }, 2000);
+    }
+
+    function formatDateTime(value) {
+      if (!value) return '—';
+      const timestamp = Date.parse(value);
+      if (Number.isNaN(timestamp)) return value;
+      return new Date(timestamp).toLocaleString('pl-PL');
+    }
+
+    function renderPlayerEntry(player) {
+      if (typeof player === 'string') {
+        return '<li>' + escapeHtml(player) + '</li>';
+      }
+      if (!player || typeof player !== 'object') {
+        return '<li class="muted">Nieznany gracz</li>';
+      }
+
+      const name = player.name || player.raw || 'anon';
+      const extras = [];
+      if (typeof player.score === 'number') extras.push('score: ' + player.score);
+      if (typeof player.time === 'number') extras.push('time: ' + Math.round(player.time) + 's');
+      if (player.team) extras.push('team: ' + player.team);
+
+      return '<li>' + escapeHtml(name) + (extras.length ? ' <span class="muted">(' + escapeHtml(extras.join(', ')) + ')</span>' : '') + '</li>';
+    }
+
+    function renderPlayersList(server) {
+      if (!Array.isArray(server.playerList) || server.playerList.length === 0) {
+        return '<div class="players-list"><div class="empty-state">Brak danych o aktywnych graczach dla tego odświeżenia.</div></div>';
+      }
+
+      return '<div class="players-list"><ul>' + server.playerList.map(renderPlayerEntry).join('') + '</ul></div>';
+    }
+
+    function renderServerDetails(server, colspan) {
+      return `
+        <tr class="detail-row">
+          <td colspan="${colspan}">
+            <div class="details-grid">
+              <div class="detail-item" title="Adres do połączenia"><span class="label">IP:port</span>${escapeHtml(server.ip || '—')}</div>
+              <div class="detail-item" title="Ping z ostatniego live query"><span class="label">Ping</span>${typeof server.ping === 'number' ? server.ping + ' ms' : '—'}</div>
+              <div class="detail-item" title="Źródło liczby graczy"><span class="label">Źródło graczy</span>${escapeHtml(server.playerCountSource || 'unknown')}</div>
+              <div class="detail-item" title="Kiedy serwer był ostatnio widziany"><span class="label">lastSeenAt</span>${escapeHtml(formatDateTime(server.lastSeenAt))}</div>
+              <div class="detail-item" title="Ile kolejnych odświeżeń serwer pominął"><span class="label">Missed refresh</span>${Number.isInteger(server.missedRefreshCount) ? server.missedRefreshCount : '—'}</div>
+              <div class="detail-item" title="Stabilność obecności serwera"><span class="label">Stability</span>${escapeHtml(server.stabilityState || 'unknown')}</div>
+              <div class="detail-item" title="Znacznik czasu ostatniego odświeżenia listy"><span class="label">lastRefreshAt</span>${escapeHtml(formatDateTime(server.lastRefreshAt))}</div>
+            </div>
+            <div>
+              <div class="muted" style="margin-bottom:6px;">Gracze online</div>
+              ${renderPlayersList(server)}
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    function syncTableHead() {
+      const row = document.getElementById('tableHeadRow');
+      row.innerHTML = state.advancedView
+        ? '<th>Kraj</th><th>Nazwa serwera</th><th>Gracze</th><th>Ping</th><th>Mapa</th><th>Źródło / stabilność</th><th>Akcja</th>'
+        : '<th>Kraj</th><th>Nazwa serwera</th><th>Gracze</th><th>Ping</th><th>Mapa</th><th>Akcja</th>';
+    }
+
+    function toggleDetails(ip) {
+      if (!ip) return;
+      if (expandedServers.has(ip)) expandedServers.delete(ip);
+      else expandedServers.add(ip);
+      applyAndRender();
     }
 
     function getPingLevel(ping) {
@@ -443,35 +547,54 @@
           emptyMessage = 'Brak danych — ostatnie odświeżenie nieudane.';
         }
 
-        tbody.innerHTML = '<tr><td colspan="6" class="empty">' + emptyMessage + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + (state.advancedView ? 7 : 6) + '" class="empty">' + emptyMessage + '</td></tr>';
         return;
       }
+
+      const visibleIps = new Set(filtered.map((server) => server.ip));
+      expandedServers = new Set(Array.from(expandedServers).filter((ip) => visibleIps.has(ip)));
 
       tbody.innerHTML = filtered.map((s) => {
         const isFull = s.players >= s.maxplayers;
         const connectCmd = 'connect ' + s.ip;
         const ping = getPingLevel(s.ping);
         const favActive = favorites.has(s.ip);
+        const isExpanded = expandedServers.has(s.ip);
+        const detailColspan = state.advancedView ? 7 : 6;
+        const metaCol = state.advancedView
+          ? '<td title="Źródło i stabilność"><span class="muted">' + escapeHtml(s.playerCountSource || 'unknown') + '</span><br>' + escapeHtml(s.stabilityState || 'stable') + '</td>'
+          : '';
+
         return `
-          <tr>
+          <tr class="expandable-row ${isExpanded ? 'expanded' : ''}" onclick="handleRowClick(event, decodeURIComponent('${encodeInlineArg(s.ip)}'))" title="Kliknij, aby ${isExpanded ? 'zwinąć' : 'rozwinąć'} szczegóły">
             <td class="flag">${getFlag(s.country)}</td>
             <td>
               <span class="server-name">${escapeHtml(s.name)}</span>
               <span class="badges">${serverBadges(s, isFull)}</span>
+              <div class="muted" title="Adres serwera">${escapeHtml(s.ip || '—')}</div>
             </td>
-            <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${s.playerCountSource || 'unknown'}">${s.players}/${s.maxplayers}</td>
-            <td class="ping ${ping.cls}">${ping.label}</td>
-            <td>${s.map ? escapeHtml(s.map) : '<span class="muted">—</span>'}</td>
+            <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${escapeHtml(s.playerCountSource || 'unknown')}">${s.players}/${s.maxplayers}</td>
+            <td class="ping ${ping.cls}" title="Ping z live query">${ping.label}</td>
+            <td title="Mapa">${s.map ? escapeHtml(s.map) : '<span class="muted">—</span>'}</td>
+            ${metaCol}
             <td>
               <div class="btn-group">
                 <button class="btn-fav ${favActive ? 'active' : ''}" onclick="toggleFavorite(decodeURIComponent('${encodeInlineArg(s.ip)}'))">${favActive ? '★' : '☆'}</button>
                 <a class="btn-connect" href="steam://run/4465480//+connect ${escapeHtml(s.ip)}">▶ Connect</a>
                 <button class="btn-copy" onclick="copyToClipboard(decodeURIComponent('${encodeInlineArg(connectCmd)}'), this)">Kopiuj connect</button>
+                <button class="btn-copy alt" onclick="copyToClipboard(decodeURIComponent('${encodeInlineArg(s.ip)}'), this, 'Kopiuj IP')" title="Kopiuj samo IP:port">IP</button>
               </div>
             </td>
           </tr>
+          ${isExpanded ? renderServerDetails(s, detailColspan) : ''}
         `;
       }).join('');
+    }
+
+    function handleRowClick(event, ip) {
+      const interactive = event.target.closest('button, a, input, select, label');
+      if (interactive) return;
+      toggleDetails(ip);
     }
 
     function updateCountryOptions(servers) {
@@ -508,20 +631,20 @@
       }
     }
 
-    async function copyToClipboard(text, btn) {
+    async function copyToClipboard(text, btn, fallbackLabel) {
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(text);
         } else {
           await fallbackCopyText(text);
         }
-        setCopyButtonState(btn, '✓ Skopiowano', true);
+        setCopyButtonState(btn, '✓ Skopiowano', true, fallbackLabel);
       } catch (err) {
         try {
           await fallbackCopyText(text);
-          setCopyButtonState(btn, '✓ Skopiowano', true);
+          setCopyButtonState(btn, '✓ Skopiowano', true, fallbackLabel);
         } catch (fallbackErr) {
-          setCopyButtonState(btn, '✗ Błąd kopiowania', false);
+          setCopyButtonState(btn, '✗ Błąd kopiowania', false, fallbackLabel);
         }
       }
     }
@@ -651,6 +774,12 @@
         applyAndRender();
       });
 
+      document.getElementById('advancedViewToggle').addEventListener('change', (event) => {
+        state.advancedView = event.target.checked;
+        syncTableHead();
+        applyAndRender();
+      });
+
       document.getElementById('autoRefreshSelect').addEventListener('change', (event) => {
         state.autoRefreshSec = Number(event.target.value) || 0;
         scheduleAutoRefresh();
@@ -658,6 +787,7 @@
     }
 
     initControls();
+    syncTableHead();
     startCountdown();
     fetchServers();
     scheduleAutoRefresh();
