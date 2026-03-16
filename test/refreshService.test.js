@@ -56,6 +56,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
       queryServerMeta: async () => ({
         playerCount: 6,
         players: ['one', 'two'],
+        playerListStatus: 'available',
         ping: 23
       })
     }
@@ -69,6 +70,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(persisted.servers.length, 1);
   assert.equal(persisted.servers[0].playerCountSource, 'gamedig_live');
   assert.deepEqual(persisted.servers[0].playerList, ['one', 'two']);
+  assert.equal(persisted.servers[0].playerListStatus, 'available');
 
   const restored = createRefreshService({
     config: createConfig({ snapshotCacheFile: cacheFile }),
@@ -84,6 +86,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(snapshot.count, 1);
   assert.equal(snapshot.servers[0].playerCountSource, 'gamedig_live');
   assert.equal(snapshot.servers[0].stabilityState, 'stable');
+  assert.equal(snapshot.servers[0].playerListStatus, 'available');
   assert.equal(snapshot.freshness, 'fresh');
 });
 
@@ -148,6 +151,7 @@ test('refresh service uses steam fallback source when live query is unavailable'
   assert.equal(snapshot.count, 1);
   assert.equal(snapshot.servers[0].playerCountSource, 'steam_fallback');
   assert.equal(snapshot.servers[0].playerList, null);
+  assert.equal(snapshot.servers[0].playerListStatus, 'unavailable');
 });
 
 test('refresh service restores backward-compatible snapshot payloads with additive defaults', async () => {
@@ -190,4 +194,38 @@ test('refresh service restores backward-compatible snapshot payloads with additi
   assert.equal(snapshot.servers[0].missedRefreshCount, 0);
   assert.equal(snapshot.servers[0].stabilityState, 'stable');
   assert.equal(snapshot.servers[0].lastSeenAt, '2024-01-01T00:00:00.000Z');
+  assert.equal(snapshot.servers[0].playerListStatus, 'unavailable');
+});
+
+
+test('refresh service preserves data-driven player list status from live-like fixtures', async () => {
+  const variants = [
+    { addr: '1.1.1.1:27015', map: 'de_dust2', name: 'A', players: 1, max_players: 8 },
+    { addr: '1.1.1.1:27016', map: 'de_inferno', name: 'B', players: 0, max_players: 8 },
+    { addr: '1.1.1.1:27017', map: 'de_mirage', name: 'C', players: 2, max_players: 8 }
+  ];
+
+  const byPort = new Map([
+    [27015, { playerCount: 1, players: ['real-player'], playerListStatus: 'available', ping: 20 }],
+    [27016, { playerCount: 0, players: [], playerListStatus: 'empty', ping: 21 }],
+    [27017, { playerCount: 2, players: [], playerListStatus: 'filtered_invalid', ping: 22 }]
+  ]);
+
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: { fetchServerList: async () => variants },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: {
+      queryServerMeta: async (_host, port) => byPort.get(port)
+    }
+  });
+
+  await refreshService.refreshServers('fixture-like');
+  const snapshot = refreshService.getSnapshot();
+  const statusByIp = new Map(snapshot.servers.map((s) => [s.ip, s.playerListStatus]));
+
+  assert.equal(statusByIp.get('1.1.1.1:27015'), 'available');
+  assert.equal(statusByIp.get('1.1.1.1:27016'), 'empty');
+  assert.equal(statusByIp.get('1.1.1.1:27017'), 'filtered_invalid');
 });
