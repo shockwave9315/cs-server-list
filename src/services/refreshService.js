@@ -4,6 +4,66 @@ import { mapLimit } from '../utils/network.js';
 import { dedupeByAddr, parseServerAddr } from '../utils/servers.js';
 import { buildFreshness } from '../utils/freshness.js';
 
+const PLAYER_COUNT_SOURCES = new Set(['gamedig_live', 'steam_fallback']);
+
+const REFRESH_STABILITY_DEFAULTS = Object.freeze({
+  graceMissLimit: 2,
+  staleMissThreshold: 2
+});
+
+function coerceIsoString(value) {
+  return typeof value === 'string' ? value : null;
+}
+
+function coerceNonNegativeInt(value, fallback = 0) {
+  if (!Number.isInteger(value) || value < 0) return fallback;
+  return value;
+}
+
+function deriveStabilityState(missedRefreshCount, staleMissThreshold) {
+  if (missedRefreshCount <= 0) return 'stable';
+  if (missedRefreshCount >= staleMissThreshold) return 'stale';
+  return 'unstable';
+}
+
+function normalizePlayerCountSource(value) {
+  if (PLAYER_COUNT_SOURCES.has(value)) return value;
+  return 'steam_fallback';
+}
+
+function normalizeRestoredServer(server, fallbackSeenAt, staleMissThreshold) {
+  const missedRefreshCount = coerceNonNegativeInt(server?.missedRefreshCount, 0);
+  const lastSeenAt = coerceIsoString(server?.lastSeenAt) || fallbackSeenAt;
+  const lastRefreshAt = coerceIsoString(server?.lastRefreshAt) || fallbackSeenAt;
+
+  return {
+    ...server,
+    ping: typeof server?.ping === 'number' ? server.ping : null,
+    playerCountSource: normalizePlayerCountSource(server?.playerCountSource),
+    playerList: Array.isArray(server?.playerList) ? server.playerList : null,
+    lastSeenAt,
+    missedRefreshCount,
+    stabilityState: typeof server?.stabilityState === 'string'
+      ? server.stabilityState
+      : deriveStabilityState(missedRefreshCount, staleMissThreshold),
+    lastRefreshAt
+  };
+}
+
+function resolveStabilityPolicy(config) {
+  const graceMissLimit = Number.isInteger(config.graceMissLimit) && config.graceMissLimit > 0
+    ? config.graceMissLimit
+    : REFRESH_STABILITY_DEFAULTS.graceMissLimit;
+  const staleMissThreshold = Number.isInteger(config.staleMissThreshold) && config.staleMissThreshold > 0
+    ? config.staleMissThreshold
+    : Math.max(graceMissLimit, REFRESH_STABILITY_DEFAULTS.staleMissThreshold);
+
+  return {
+    graceMissLimit,
+    staleMissThreshold
+  };
+}
+
 export function createRefreshService({ config, logger, steamService, geoIpService, gameDigService }) {
   const state = {
     cachedServers: [],
@@ -13,6 +73,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     refreshInProgress: false,
     refreshPromise: null
   };
+
+  const { graceMissLimit, staleMissThreshold } = resolveStabilityPolicy(config);
 
   function getFreshness() {
     return buildFreshness(state.lastSuccessAt, config.maxStaleMs);
@@ -44,10 +106,13 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.servers)) return false;
 
-      state.cachedServers = parsed.servers;
-      state.lastUpdate = typeof parsed.lastUpdate === 'string' ? parsed.lastUpdate : null;
-      state.lastSuccessAt = typeof parsed.lastSuccessAt === 'string' ? parsed.lastSuccessAt : null;
-      state.lastError = typeof parsed.lastError === 'string' ? parsed.lastError : null;
+      const fallbackSeenAt = coerceIsoString(parsed.lastSuccessAt) || coerceIsoString(parsed.lastUpdate);
+      state.cachedServers = parsed.servers.map((server) =>
+        normalizeRestoredServer(server, fallbackSeenAt, staleMissThreshold)
+      );
+      state.lastUpdate = coerceIsoString(parsed.lastUpdate);
+      state.lastSuccessAt = coerceIsoString(parsed.lastSuccessAt);
+      state.lastError = coerceIsoString(parsed.lastError);
 
       logger.info('snapshot.restore_success', {
         file: config.snapshotCacheFile,
@@ -93,8 +158,14 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
             const country = await geoIpService.getCountry(parsed.host);
             if (!country || !config.allowedCountriesSet.has(country)) return null;
 
-            const playersFromQuery = await gameDigService.queryPlayers(parsed.host, parsed.port);
+            const query = typeof gameDigService.queryServerMeta === 'function'
+              ? await gameDigService.queryServerMeta(parsed.host, parsed.port)
+              : null;
+            const playersFromQuery = query?.playerCount ?? (typeof gameDigService.queryPlayers === 'function'
+              ? await gameDigService.queryPlayers(parsed.host, parsed.port)
+              : null);
             const playerCountSource = playersFromQuery == null ? 'steam_fallback' : 'gamedig_live';
+
             return {
               name: server.name,
               ip: parsed.normalized,
@@ -102,7 +173,9 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
               playerCountSource,
               maxplayers: server.max_players,
               map: server.map,
-              country
+              country,
+              ping: query?.ping ?? null,
+              playerList: Array.isArray(query?.players) ? query.players : null
             };
           },
           {
@@ -115,10 +188,49 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
           }
         );
 
-        const filtered = processed.filter(Boolean).sort((a, b) => b.players - a.players);
+        const now = new Date().toISOString();
+        const previousByIp = new Map(state.cachedServers.map((server) => [server.ip, server]));
+        const seenIps = new Set();
+
+        const merged = [];
+        for (const server of processed.filter(Boolean)) {
+          const previous = previousByIp.get(server.ip);
+          seenIps.add(server.ip);
+
+          merged.push({
+            ...server,
+            playerCountSource: normalizePlayerCountSource(server.playerCountSource),
+            lastSeenAt: now,
+            missedRefreshCount: 0,
+            stabilityState: 'stable',
+            lastRefreshAt: now,
+            ping: typeof server.ping === 'number' ? server.ping : null,
+            playerList: Array.isArray(server.playerList) ? server.playerList : null
+          });
+        }
+
+        for (const previous of state.cachedServers) {
+          if (seenIps.has(previous.ip)) continue;
+          const nextMissed = coerceNonNegativeInt(previous.missedRefreshCount, 0) + 1;
+          if (nextMissed > graceMissLimit) continue;
+
+          merged.push({
+            ...previous,
+            playerCountSource: normalizePlayerCountSource(previous.playerCountSource),
+            missedRefreshCount: nextMissed,
+            stabilityState: deriveStabilityState(nextMissed, staleMissThreshold),
+            lastRefreshAt: now,
+            lastSeenAt: coerceIsoString(previous.lastSeenAt) || state.lastSuccessAt || state.lastUpdate || now,
+            ping: typeof previous.ping === 'number' ? previous.ping : null,
+            playerList: Array.isArray(previous.playerList) ? previous.playerList : null
+          });
+        }
+
+        const filtered = merged.sort((a, b) => b.players - a.players);
+
         state.cachedServers = filtered;
-        state.lastUpdate = new Date().toISOString();
-        state.lastSuccessAt = state.lastUpdate;
+        state.lastUpdate = now;
+        state.lastSuccessAt = now;
         state.lastError = null;
         await persistSnapshot();
 
