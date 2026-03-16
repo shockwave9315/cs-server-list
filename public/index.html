@@ -26,15 +26,74 @@
     }
     .status {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
       font-size: 0.85rem;
       color: #aaa;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       justify-content: center;
       gap: 12px;
     }
-    .status span { color: #4ade80; }
+    .status > span { color: #aaa; }
+    .status .status-ok { color: #4ade80; }
+    .controls {
+      max-width: 900px;
+      margin: 0 auto 10px;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      align-items: end;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control-group label {
+      font-size: 0.75rem;
+      color: #9aa0b3;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    input[type="search"], select {
+      background: #16213e;
+      color: #eee;
+      border: 1px solid #25345d;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 0.85rem;
+      width: 100%;
+    }
+    .toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 0.82rem;
+    }
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: #c6cbe0;
+    }
+    .stats {
+      max-width: 900px;
+      margin: 0 auto 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+    .stat-chip {
+      background: #16213e;
+      border: 1px solid #25345d;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      color: #d8dcef;
+    }
     table {
       width: 100%;
       max-width: 900px;
@@ -57,12 +116,34 @@
       padding: 12px 16px;
       border-bottom: 1px solid #1a1a2e;
       font-size: 0.95rem;
+      vertical-align: middle;
     }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #1a2a4a; }
     .players { font-weight: bold; color: #4ade80; }
     .players.full { color: #f87171; }
     .flag { font-size: 1.2rem; }
+    .server-name { font-weight: 600; }
+    .muted { color: #8690a8; font-size: 0.8rem; }
+    .badges { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; }
+    .badge {
+      border: 1px solid #2c3c64;
+      color: #c7d2fe;
+      background: #111b36;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge.full { border-color: #7f1d1d; color: #fecaca; background: #3f1515; }
+    .badge.live { border-color: #166534; color: #bbf7d0; background: #15301f; }
+    .badge.fallback { border-color: #92400e; color: #fde68a; background: #38220f; }
+    .badge.low-ping { border-color: #0f766e; color: #99f6e4; background: #0f2626; }
+    .badge.unstable { border-color: #7c2d12; color: #fed7aa; background: #3d1f13; }
+    .ping.good { color: #4ade80; font-weight: 600; }
+    .ping.mid { color: #fbbf24; font-weight: 600; }
+    .ping.high { color: #f87171; font-weight: 600; }
     .btn-group { display: flex; gap: 8px; align-items: center; }
     .btn-connect {
       background: #f0a500;
@@ -77,7 +158,8 @@
       white-space: nowrap;
     }
     .btn-connect:hover { background: #fbbf24; }
-    .btn-copy {
+    .btn-copy,
+    .btn-fav {
       background: #0f3460;
       color: #eee;
       border: 1px solid #333;
@@ -87,8 +169,10 @@
       font-size: 0.8rem;
       white-space: nowrap;
     }
-    .btn-copy:hover { background: #1a4a80; }
+    .btn-copy:hover,
+    .btn-fav:hover { background: #1a4a80; }
     .btn-copy.copied { color: #4ade80; border-color: #4ade80; }
+    .btn-fav.active { color: #fcd34d; border-color: #f0a500; }
     .btn-refresh {
       background: none;
       border: 1px solid #f0a500;
@@ -112,10 +196,50 @@
   <p class="subtitle">de_dust2 · 8–10 slotów · Polska & Niemcy</p>
 
   <div class="status">
-    <span id="statusText">Status: oczekiwanie na dane</span>
+    <span id="statusText" class="status-ok">Status: oczekiwanie na dane</span>
     <span>Ostatnia aktualizacja: <span id="lastUpdate">—</span></span>
+    <span>Auto-refresh: <span id="refreshCountdown">off</span></span>
     <button class="btn-refresh" onclick="manualRefresh()">🔄 Odśwież</button>
   </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label for="searchInput">Szukaj serwera</label>
+      <input id="searchInput" type="search" placeholder="np. Dust2" />
+    </div>
+    <div class="control-group">
+      <label for="countryFilter">Kraj</label>
+      <select id="countryFilter">
+        <option value="all">Wszystkie</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="sortSelect">Sortowanie</label>
+      <select id="sortSelect">
+        <option value="players_desc">Gracze ↓</option>
+        <option value="ping_asc">Ping ↑</option>
+        <option value="name_asc">Nazwa A-Z</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="autoRefreshSelect">Auto-refresh</label>
+      <select id="autoRefreshSelect">
+        <option value="0">Wyłączony</option>
+        <option value="15">15s</option>
+        <option value="30">30s</option>
+        <option value="60" selected>60s</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Widok</label>
+      <div class="toggles">
+        <label class="toggle"><input id="hideFullToggle" type="checkbox" /> Ukryj pełne</label>
+        <label class="toggle"><input id="favoritesOnlyToggle" type="checkbox" /> Tylko ulubione</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats" id="statsBar"></div>
 
   <table>
     <thead>
@@ -123,21 +247,74 @@
         <th>Kraj</th>
         <th>Nazwa serwera</th>
         <th>Gracze</th>
+        <th>Ping</th>
         <th>Mapa</th>
         <th>Akcja</th>
       </tr>
     </thead>
     <tbody id="serverList">
-      <tr><td colspan="5" class="empty">Kliknij Odśwież aby załadować serwery.</td></tr>
+      <tr><td colspan="6" class="empty">Kliknij Odśwież aby załadować serwery.</td></tr>
     </tbody>
   </table>
 
   <script>
     const refreshCooldownMs = 1500;
+    const favoriteStorageKey = 'cs-server-browser-favorites';
     let lastManualRefreshAt = 0;
+    let autoRefreshTimer = null;
+    let countdownTimer = null;
+    let autoRefreshDueAt = null;
+    let isFetchingServers = false;
+    let pendingFetchAfterCurrent = false;
+    let latestSnapshot = null;
+    let favorites = loadFavorites();
+
+    const state = {
+      search: '',
+      country: 'all',
+      sort: 'players_desc',
+      hideFull: false,
+      favoritesOnly: false,
+      autoRefreshSec: 60
+    };
 
     function getFlag(country) {
       return country === 'PL' ? '🇵🇱' : country === 'DE' ? '🇩🇪' : '🌍';
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function encodeInlineArg(value) {
+      return encodeURIComponent(String(value ?? ''));
+    }
+
+    function loadFavorites() {
+      try {
+        const raw = localStorage.getItem(favoriteStorageKey);
+        const parsed = JSON.parse(raw || '[]');
+        if (!Array.isArray(parsed)) return new Set();
+        return new Set(parsed.filter((item) => typeof item === 'string'));
+      } catch (err) {
+        return new Set();
+      }
+    }
+
+    function saveFavorites() {
+      localStorage.setItem(favoriteStorageKey, JSON.stringify(Array.from(favorites)));
+    }
+
+    function toggleFavorite(ip) {
+      if (favorites.has(ip)) favorites.delete(ip);
+      else favorites.add(ip);
+      saveFavorites();
+      applyAndRender();
     }
 
     function setCopyButtonState(btn, label, success) {
@@ -152,6 +329,164 @@
         btn.textContent = 'Kopiuj connect';
         btn.classList.remove('copied');
       }, 2000);
+    }
+
+    function getPingLevel(ping) {
+      if (typeof ping !== 'number') return { cls: '', label: '—' };
+      if (ping <= 50) return { cls: 'good', label: ping + ' ms' };
+      if (ping <= 100) return { cls: 'mid', label: ping + ' ms' };
+      return { cls: 'high', label: ping + ' ms' };
+    }
+
+    function serverBadges(server, isFull) {
+      const badges = [];
+      if (isFull) badges.push('<span class="badge full">full</span>');
+      if (server.playerCountSource === 'gamedig_live') badges.push('<span class="badge live">live</span>');
+      if (server.playerCountSource === 'steam_fallback') badges.push('<span class="badge fallback">fallback</span>');
+      if (typeof server.ping === 'number' && server.ping <= 50) badges.push('<span class="badge low-ping">low ping</span>');
+      if (server.stabilityState && server.stabilityState !== 'stable') badges.push('<span class="badge unstable">unstable</span>');
+      return badges.join('');
+    }
+
+    function updateStatus(data) {
+      const statusEl = document.getElementById('statusText');
+      statusEl.classList.remove('status-ok');
+
+      if (data.refreshInProgress) {
+        statusEl.textContent = 'Status: trwa odświeżanie live (wyniki mogą się różnić między próbami)…';
+        return;
+      }
+
+      if (data.lastError) {
+        statusEl.textContent = 'Status: ostatnie odświeżanie nieudane (' + data.lastError + ')';
+        return;
+      }
+
+      if (data.freshness === 'never_succeeded') {
+        statusEl.textContent = 'Status: brak udanego odświeżenia live';
+        return;
+      }
+
+      if (data.freshness === 'stale' || (!data.freshness && data.stale)) {
+        statusEl.textContent = 'Status: dane nieświeże (live query, możliwe różnice przy kolejnym odświeżeniu)';
+        return;
+      }
+
+      statusEl.textContent = 'Status: OK (dane z zapytań live, mogą się chwilowo zmieniać)';
+      statusEl.classList.add('status-ok');
+    }
+
+    function updateStats(servers, filtered) {
+      const fullCount = filtered.filter((s) => s.players >= s.maxplayers).length;
+      const withPing = filtered.filter((s) => typeof s.ping === 'number');
+      const avgPing = withPing.length
+        ? Math.round(withPing.reduce((sum, s) => sum + s.ping, 0) / withPing.length) + ' ms'
+        : '—';
+      const liveCount = filtered.filter((s) => s.playerCountSource === 'gamedig_live').length;
+      const fallbackCount = filtered.filter((s) => s.playerCountSource === 'steam_fallback').length;
+
+      const stats = [
+        'Pokazane: ' + filtered.length + '/' + servers.length,
+        'Śr. ping: ' + avgPing,
+        'Pełne: ' + fullCount,
+        'Live/Fallback: ' + liveCount + '/' + fallbackCount
+      ];
+
+      document.getElementById('statsBar').innerHTML = stats.map((text) => '<span class="stat-chip">' + text + '</span>').join('');
+    }
+
+    function sortServers(servers) {
+      return servers.sort((a, b) => {
+        // Predictable rule: favorites are always grouped first, then selected sort is applied.
+        const favA = favorites.has(a.ip) ? 1 : 0;
+        const favB = favorites.has(b.ip) ? 1 : 0;
+        if (favA !== favB) return favB - favA;
+
+        if (state.sort === 'players_desc') return (b.players - a.players) || a.name.localeCompare(b.name, 'pl');
+        if (state.sort === 'ping_asc') {
+          const pingA = typeof a.ping === 'number' ? a.ping : Number.MAX_SAFE_INTEGER;
+          const pingB = typeof b.ping === 'number' ? b.ping : Number.MAX_SAFE_INTEGER;
+          return (pingA - pingB) || a.name.localeCompare(b.name, 'pl');
+        }
+        return a.name.localeCompare(b.name, 'pl');
+      });
+    }
+
+    function applyAndRender() {
+      const tbody = document.getElementById('serverList');
+      const data = latestSnapshot;
+      if (!data || !Array.isArray(data.servers)) {
+        return;
+      }
+
+      let filtered = data.servers.filter((s) => {
+        if (state.search && !s.name.toLowerCase().includes(state.search)) return false;
+        if (state.country !== 'all' && s.country !== state.country) return false;
+        if (state.hideFull && s.players >= s.maxplayers) return false;
+        if (state.favoritesOnly && !favorites.has(s.ip)) return false;
+        return true;
+      });
+
+      filtered = sortServers(filtered);
+      updateStats(data.servers, filtered);
+
+      if (filtered.length === 0) {
+        const hasActiveFilters = Boolean(state.search)
+          || state.country !== 'all'
+          || state.hideFull
+          || state.favoritesOnly;
+
+        let emptyMessage = 'Brak dostępnych serwerów.';
+        if (hasActiveFilters) {
+          emptyMessage = 'Brak serwerów spełniających kryteria.';
+        } else if (data.servers.length === 0 && data.lastError && data.freshness === 'never_succeeded') {
+          emptyMessage = 'Brak danych — ostatnie odświeżenie nieudane.';
+        }
+
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">' + emptyMessage + '</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map((s) => {
+        const isFull = s.players >= s.maxplayers;
+        const connectCmd = 'connect ' + s.ip;
+        const ping = getPingLevel(s.ping);
+        const favActive = favorites.has(s.ip);
+        return `
+          <tr>
+            <td class="flag">${getFlag(s.country)}</td>
+            <td>
+              <span class="server-name">${escapeHtml(s.name)}</span>
+              <span class="badges">${serverBadges(s, isFull)}</span>
+            </td>
+            <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${s.playerCountSource || 'unknown'}">${s.players}/${s.maxplayers}</td>
+            <td class="ping ${ping.cls}">${ping.label}</td>
+            <td>${s.map ? escapeHtml(s.map) : '<span class="muted">—</span>'}</td>
+            <td>
+              <div class="btn-group">
+                <button class="btn-fav ${favActive ? 'active' : ''}" onclick="toggleFavorite(decodeURIComponent('${encodeInlineArg(s.ip)}'))">${favActive ? '★' : '☆'}</button>
+                <a class="btn-connect" href="steam://run/4465480//+connect ${escapeHtml(s.ip)}">▶ Connect</a>
+                <button class="btn-copy" onclick="copyToClipboard(decodeURIComponent('${encodeInlineArg(connectCmd)}'), this)">Kopiuj connect</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function updateCountryOptions(servers) {
+      const select = document.getElementById('countryFilter');
+      const prev = state.country;
+      const countries = Array.from(new Set(servers.map((s) => s.country).filter(Boolean))).sort();
+      select.innerHTML = '<option value="all">Wszystkie</option>' + countries
+        .map((country) => '<option value="' + escapeHtml(country) + '">' + escapeHtml(country) + '</option>')
+        .join('');
+      if (countries.includes(prev)) {
+        select.value = prev;
+      } else {
+        select.value = 'all';
+        state.country = 'all';
+      }
     }
 
     async function fallbackCopyText(text) {
@@ -191,37 +526,56 @@
       }
     }
 
-    function updateStatus(data) {
-      const statusEl = document.getElementById('statusText');
-      if (data.refreshInProgress) {
-        statusEl.textContent = 'Status: trwa odświeżanie live (wyniki mogą się różnić między próbami)…';
+    function startCountdown() {
+      if (countdownTimer) clearInterval(countdownTimer);
+
+      countdownTimer = setInterval(() => {
+        const el = document.getElementById('refreshCountdown');
+        if (!state.autoRefreshSec) {
+          el.textContent = 'off';
+          return;
+        }
+
+        if (!autoRefreshDueAt) {
+          el.textContent = state.autoRefreshSec + 's';
+          return;
+        }
+
+        const leftMs = Math.max(0, autoRefreshDueAt - Date.now());
+        el.textContent = Math.ceil(leftMs / 1000) + 's';
+      }, 300);
+    }
+
+    function scheduleAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearTimeout(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+
+      if (!state.autoRefreshSec) {
+        autoRefreshDueAt = null;
         return;
       }
 
-      if (data.lastError) {
-        statusEl.textContent = 'Status: ostatnie odświeżanie nieudane (' + data.lastError + ')';
-        return;
-      }
-
-      if (data.freshness === 'never_succeeded') {
-        statusEl.textContent = 'Status: brak udanego odświeżenia live';
-        return;
-      }
-
-      if (data.freshness === 'stale' || (!data.freshness && data.stale)) {
-        statusEl.textContent = 'Status: dane nieświeże (live query, możliwe różnice przy kolejnym odświeżeniu)';
-        return;
-      }
-
-      statusEl.textContent = 'Status: OK (dane z zapytań live, mogą się chwilowo zmieniać)';
+      autoRefreshDueAt = Date.now() + state.autoRefreshSec * 1000;
+      autoRefreshTimer = setTimeout(async () => {
+        await fetchServers();
+        scheduleAutoRefresh();
+      }, state.autoRefreshSec * 1000);
     }
 
     async function fetchServers() {
+      if (isFetchingServers) {
+        pendingFetchAfterCurrent = true;
+        return;
+      }
+
+      isFetchingServers = true;
       try {
         const res = await fetch('/api/servers');
         const data = await res.json();
-        const tbody = document.getElementById('serverList');
 
+        latestSnapshot = data;
         updateStatus(data);
 
         if (data.lastUpdate) {
@@ -229,32 +583,17 @@
             new Date(data.lastUpdate).toLocaleTimeString('pl-PL');
         }
 
-        if (!data.servers || data.servers.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="empty">Brak serwerów spełniających kryteria.</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = data.servers.map(s => {
-          const isFull = s.players >= s.maxplayers;
-          const connectCmd = 'connect ' + s.ip;
-          return `
-            <tr>
-              <td class="flag">${getFlag(s.country)}</td>
-              <td>${s.name}</td>
-              <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${s.playerCountSource || 'unknown'}">${s.players}/${s.maxplayers}</td>
-              <td>${s.map}</td>
-              <td>
-                <div class="btn-group">
-                  <a class="btn-connect" href="steam://run/4465480//+connect ${s.ip}">▶ Connect</a>
-                  <button class="btn-copy" onclick="copyToClipboard('${connectCmd}', this)">Kopiuj connect</button>
-                </div>
-              </td>
-            </tr>
-          `;
-        }).join('');
-
+        const servers = Array.isArray(data.servers) ? data.servers : [];
+        updateCountryOptions(servers);
+        applyAndRender();
       } catch (err) {
-        document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem';
+        document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem (pozostawiono poprzednie wyniki)';
+      } finally {
+        isFetchingServers = false;
+        if (pendingFetchAfterCurrent) {
+          pendingFetchAfterCurrent = false;
+          fetchServers();
+        }
       }
     }
 
@@ -282,11 +621,46 @@
       } finally {
         btn.textContent = '🔄 Odśwież';
         btn.disabled = false;
+        scheduleAutoRefresh();
       }
     }
 
-    // Załaduj dane przy starcie strony
+    function initControls() {
+      document.getElementById('searchInput').addEventListener('input', (event) => {
+        state.search = event.target.value.trim().toLowerCase();
+        applyAndRender();
+      });
+
+      document.getElementById('countryFilter').addEventListener('change', (event) => {
+        state.country = event.target.value;
+        applyAndRender();
+      });
+
+      document.getElementById('sortSelect').addEventListener('change', (event) => {
+        state.sort = event.target.value;
+        applyAndRender();
+      });
+
+      document.getElementById('hideFullToggle').addEventListener('change', (event) => {
+        state.hideFull = event.target.checked;
+        applyAndRender();
+      });
+
+      document.getElementById('favoritesOnlyToggle').addEventListener('change', (event) => {
+        state.favoritesOnly = event.target.checked;
+        applyAndRender();
+      });
+
+      document.getElementById('autoRefreshSelect').addEventListener('change', (event) => {
+        state.autoRefreshSec = Number(event.target.value) || 0;
+        scheduleAutoRefresh();
+      });
+    }
+
+    initControls();
+    startCountdown();
     fetchServers();
+    scheduleAutoRefresh();
   </script>
 </body>
 </html>
