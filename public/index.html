@@ -242,6 +242,44 @@
     .players-list ul { margin: 0; padding-left: 18px; }
     .players-list li { margin: 3px 0; color: #d9e0f8; }
     .players-list .empty-state { color: #8e9bc1; }
+    .detail-actions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .hidden-section {
+      width: 100%;
+      max-width: 900px;
+      margin: 12px auto 0;
+      border: 1px solid #25345d;
+      border-radius: 10px;
+      background: #111b36;
+      overflow: hidden;
+    }
+    .hidden-section summary {
+      cursor: pointer;
+      padding: 10px 14px;
+      color: #d8dcef;
+      background: #0f1730;
+      font-size: 0.84rem;
+    }
+    .hidden-list {
+      list-style: none;
+      margin: 0;
+      padding: 10px 14px;
+      display: grid;
+      gap: 8px;
+    }
+    .hidden-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #1a1a2e;
+      padding-bottom: 8px;
+    }
+    .hidden-list li:last-child { border-bottom: none; padding-bottom: 0; }
   </style>
 </head>
 <body>
@@ -311,9 +349,13 @@
     </tbody>
   </table>
 
+  <div id="hiddenServersContainer"></div>
+
   <script>
     const refreshCooldownMs = 1500;
     const favoriteStorageKey = 'cs-server-browser-favorites';
+    const watchedStorageKey = 'cs-server-browser-watched';
+    const hiddenStorageKey = 'cs-server-browser-hidden';
     let lastManualRefreshAt = 0;
     let autoRefreshTimer = null;
     let countdownTimer = null;
@@ -322,6 +364,8 @@
     let pendingFetchAfterCurrent = false;
     let latestSnapshot = null;
     let favorites = loadFavorites();
+    let watchedServers = loadIpSet(watchedStorageKey);
+    let hiddenServers = loadHiddenServers();
     let expandedServerIp = null;
 
     const state = {
@@ -362,15 +406,19 @@
       return encodeURIComponent(String(value ?? ''));
     }
 
-    function loadFavorites() {
+    function loadIpSet(storageKey) {
       try {
-        const raw = localStorage.getItem(favoriteStorageKey);
+        const raw = localStorage.getItem(storageKey);
         const parsed = JSON.parse(raw || '[]');
         if (!Array.isArray(parsed)) return new Set();
         return new Set(parsed.filter((item) => typeof item === 'string'));
       } catch (err) {
         return new Set();
       }
+    }
+
+    function loadFavorites() {
+      return loadIpSet(favoriteStorageKey);
     }
 
     function saveFavorites() {
@@ -382,6 +430,167 @@
       else favorites.add(ip);
       saveFavorites();
       applyAndRender();
+    }
+
+    function saveWatchedServers() {
+      localStorage.setItem(watchedStorageKey, JSON.stringify(Array.from(watchedServers)));
+    }
+
+    function toggleWatchedServer(ip) {
+      if (!ip) return;
+      if (watchedServers.has(ip)) watchedServers.delete(ip);
+      else watchedServers.add(ip);
+      saveWatchedServers();
+      applyAndRender();
+    }
+
+    function normalizeHiddenServerRecord(ip, value) {
+      if (!ip || typeof ip !== 'string') return null;
+      if (!value || typeof value !== 'object') value = {};
+
+      return {
+        ip,
+        name: typeof value.name === 'string' ? value.name : 'Nieznany serwer',
+        country: typeof value.country === 'string' ? value.country : '',
+        map: typeof value.map === 'string' ? value.map : '',
+        hiddenAt: typeof value.hiddenAt === 'string' ? value.hiddenAt : new Date().toISOString(),
+        lastKnownAt: typeof value.lastKnownAt === 'string' ? value.lastKnownAt : null
+      };
+    }
+
+    function loadHiddenServers() {
+      try {
+        const raw = localStorage.getItem(hiddenStorageKey);
+        const parsed = JSON.parse(raw || '{}');
+        const map = new Map();
+
+        if (Array.isArray(parsed)) {
+          for (const ip of parsed) {
+            const record = normalizeHiddenServerRecord(ip, {});
+            if (record) map.set(ip, record);
+          }
+          return map;
+        }
+
+        if (!parsed || typeof parsed !== 'object') return map;
+        for (const [ip, value] of Object.entries(parsed)) {
+          const record = normalizeHiddenServerRecord(ip, value);
+          if (record) map.set(ip, record);
+        }
+
+        return map;
+      } catch (err) {
+        return new Map();
+      }
+    }
+
+    function saveHiddenServers() {
+      const serialized = {};
+      for (const [ip, value] of hiddenServers.entries()) serialized[ip] = value;
+      localStorage.setItem(hiddenStorageKey, JSON.stringify(serialized));
+    }
+
+    function updateHiddenServerFromSnapshot(server) {
+      if (!server || !server.ip || !hiddenServers.has(server.ip)) return;
+      const prev = hiddenServers.get(server.ip) || {};
+      hiddenServers.set(server.ip, {
+        ...prev,
+        ip: server.ip,
+        name: server.name || prev.name || 'Nieznany serwer',
+        country: server.country || prev.country || '',
+        map: server.map || prev.map || '',
+        lastKnownAt: server.lastSeenAt || new Date().toISOString(),
+        hiddenAt: prev.hiddenAt || new Date().toISOString()
+      });
+    }
+
+    function hideServer(ip) {
+      if (!ip) return;
+      const known = (Array.isArray(latestSnapshot?.servers) ? latestSnapshot.servers : []).find((server) => server.ip === ip) || {};
+      hiddenServers.set(ip, {
+        ip,
+        name: known.name || 'Nieznany serwer',
+        country: known.country || '',
+        map: known.map || '',
+        hiddenAt: new Date().toISOString(),
+        lastKnownAt: known.lastSeenAt || new Date().toISOString()
+      });
+      watchedServers.delete(ip);
+      saveHiddenServers();
+      saveWatchedServers();
+      if (expandedServerIp === ip) expandedServerIp = null;
+      applyAndRender();
+    }
+
+    function unhideServer(ip) {
+      if (!ip) return;
+      hiddenServers.delete(ip);
+      saveHiddenServers();
+      applyAndRender();
+    }
+
+    function playSlotBeep() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+        osc.onended = () => ctx.close();
+      } catch (err) {
+        // Graceful no-op on unsupported audio APIs.
+      }
+    }
+
+    function maybeNotifySlot(server) {
+      if (!window.Notification || Notification.permission !== 'granted') return;
+      try {
+        new Notification('Zwolnił się slot', {
+          body: (server.name || 'Serwer') + ' (' + (server.ip || 'brak IP') + ') ma wolne miejsce.'
+        });
+      } catch (err) {
+        // Graceful no-op on blocked notifications.
+      }
+    }
+
+    function checkWatchedTransitions(previousServers, currentServers) {
+      if (!watchedServers.size) return;
+
+      const currentByIp = new Map(currentServers.map((server) => [server.ip, server]));
+      const previousByIp = new Map(previousServers.map((server) => [server.ip, server]));
+      let changed = false;
+
+      for (const ip of Array.from(watchedServers)) {
+        if (hiddenServers.has(ip)) {
+          watchedServers.delete(ip);
+          changed = true;
+          continue;
+        }
+
+        const prev = previousByIp.get(ip);
+        const curr = currentByIp.get(ip);
+        if (!prev || !curr) continue;
+
+        const wasFull = prev.players >= prev.maxplayers;
+        const isFull = curr.players >= curr.maxplayers;
+        if (wasFull && !isFull) {
+          playSlotBeep();
+          maybeNotifySlot(curr);
+          watchedServers.delete(ip);
+          changed = true;
+        }
+      }
+
+      if (changed) saveWatchedServers();
     }
 
     function setCopyButtonState(btn, label, success, fallbackLabel = 'Kopiuj connect') {
@@ -444,6 +653,8 @@
     }
 
     function renderServerDetails(server, colspan) {
+      const watched = watchedServers.has(server.ip);
+      const hidden = hiddenServers.has(server.ip);
       return `
         <tr class="detail-row">
           <td colspan="${colspan}">
@@ -461,8 +672,38 @@
               <div class="muted" style="margin-bottom:6px;">Gracze online</div>
               ${renderPlayersList(server)}
             </div>
+            <div class="detail-actions">
+              <button class="btn-fav ${watched ? 'active' : ''}" onclick="toggleWatchedServer(decodeURIComponent('${encodeInlineArg(server.ip)}'))">${watched ? 'Obserwowany' : 'Obserwuj slot'}</button>
+              <button class="btn-copy" onclick="${hidden ? `unhideServer(decodeURIComponent('${encodeInlineArg(server.ip)}'))` : `hideServer(decodeURIComponent('${encodeInlineArg(server.ip)}'))`}">${hidden ? 'Przywróć na listę' : 'Ukryj serwer'}</button>
+            </div>
           </td>
         </tr>
+      `;
+    }
+
+    function renderHiddenServers(hiddenList) {
+      const container = document.getElementById('hiddenServersContainer');
+      if (!hiddenList.length) {
+        container.innerHTML = '';
+        return;
+      }
+
+      container.innerHTML = `
+        <details class="hidden-section">
+          <summary>Ukryte serwery (${hiddenList.length})</summary>
+          <ul class="hidden-list">
+            ${hiddenList.map((server) => `
+              <li>
+                <span>
+                  ${escapeHtml(server.name || 'Nieznany serwer')} <span class="muted">(${escapeHtml(server.ip || '—')})</span>
+                  ${server.country ? '<span class="muted"> · ' + escapeHtml(server.country) + '</span>' : ''}
+                  ${server.map ? '<span class="muted"> · ' + escapeHtml(server.map) + '</span>' : ''}
+                </span>
+                <button class="btn-copy" onclick="unhideServer(decodeURIComponent('${encodeInlineArg(server.ip)}'))">Przywróć</button>
+              </li>
+            `).join('')}
+          </ul>
+        </details>
       `;
     }
 
@@ -601,7 +842,13 @@
         return;
       }
 
-      let filtered = data.servers.filter((s) => {
+      const servers = data.servers;
+      for (const server of servers) updateHiddenServerFromSnapshot(server);
+      saveHiddenServers();
+
+      const hiddenList = Array.from(hiddenServers.values());
+      let filtered = servers.filter((s) => {
+        if (hiddenServers.has(s.ip)) return false;
         if (state.search && !s.name.toLowerCase().includes(state.search)) return false;
         if (state.country !== 'all' && s.country !== state.country) return false;
         if (state.hideFull && s.players >= s.maxplayers) return false;
@@ -611,6 +858,7 @@
 
       filtered = sortServers(filtered);
       updateStats(data.servers, filtered);
+      renderHiddenServers(hiddenList.sort((a, b) => (a.name || '').localeCompare((b.name || ''), 'pl')));
 
       if (filtered.length === 0) {
         const hasActiveFilters = Boolean(state.search)
@@ -778,6 +1026,9 @@
         const res = await fetch('/api/servers');
         const data = await res.json();
 
+        const previousServers = Array.isArray(latestSnapshot?.servers) ? latestSnapshot.servers : [];
+        const currentServers = Array.isArray(data.servers) ? data.servers : [];
+        checkWatchedTransitions(previousServers, currentServers);
         latestSnapshot = data;
         updateStatus(data);
 
@@ -786,8 +1037,7 @@
             new Date(data.lastUpdate).toLocaleTimeString('pl-PL');
         }
 
-        const servers = Array.isArray(data.servers) ? data.servers : [];
-        updateCountryOptions(servers);
+        updateCountryOptions(currentServers);
         applyAndRender();
       } catch (err) {
         document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem (pozostawiono poprzednie wyniki)';
