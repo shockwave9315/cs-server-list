@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CS:GO Serwery PL/DE</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -122,7 +123,25 @@
     tr:hover td { background: #1a2a4a; }
     .players { font-weight: bold; color: #4ade80; }
     .players.full { color: #f87171; }
-    .flag { font-size: 1.2rem; }
+    .flag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 32px;
+    }
+    .flag-icon {
+      width: 20px;
+      height: 14px;
+      border-radius: 2px;
+      object-fit: cover;
+      border: 1px solid #334155;
+      background: #111827;
+    }
+    .flag-code {
+      color: #9aa6c5;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+    }
     .server-name { font-weight: 600; }
     .muted { color: #8690a8; font-size: 0.8rem; }
     .badges { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; }
@@ -239,7 +258,7 @@
   <div class="controls">
     <div class="control-group">
       <label for="searchInput">Szukaj serwera</label>
-      <input id="searchInput" type="search" placeholder="np. Dust2" />
+      <input id="searchInput" type="search" placeholder="Wpisz nazwę serwera" />
     </div>
     <div class="control-group">
       <label for="countryFilter">Kraj</label>
@@ -316,7 +335,18 @@
     };
 
     function getFlag(country) {
-      return country === 'PL' ? '🇵🇱' : country === 'DE' ? '🇩🇪' : '🌍';
+      const normalized = String(country || '').toUpperCase();
+      const mapped = {
+        PL: { src: '/flags/pl.svg', alt: 'Flaga Polski' },
+        DE: { src: '/flags/de.svg', alt: 'Flaga Niemiec' }
+      };
+
+      if (mapped[normalized]) {
+        const item = mapped[normalized];
+        return '<img class="flag-icon" src="' + item.src + '" alt="' + item.alt + '" title="' + item.alt + '">';
+      }
+
+      return '<span class="flag-code" title="Kraj: ' + escapeHtml(normalized || 'nieznany') + '">' + escapeHtml(normalized || '—') + '</span>';
     }
 
     function escapeHtml(value) {
@@ -395,7 +425,7 @@
     function renderPlayersList(server) {
       const status = server.playerListStatus || 'unavailable';
       if (!Array.isArray(server.playerList)) {
-        return '<div class="players-list"><div class="empty-state">Lista graczy niedostępna z live query dla tego odświeżenia.</div></div>';
+        return '<div class="players-list"><div class="empty-state">Serwer nie zwrócił pełnej listy graczy w tym odświeżeniu (to zależy od endpointu zapytań).</div></div>';
       }
 
       if (server.playerList.length > 0) {
@@ -410,7 +440,7 @@
         return '<div class="players-list"><div class="empty-state">Lista graczy została odfiltrowana jako niepoprawna (metadane/placeholdery).</div></div>';
       }
 
-      return '<div class="players-list"><div class="empty-state">Lista graczy niedostępna z live query dla tego odświeżenia.</div></div>';
+      return '<div class="players-list"><div class="empty-state">Serwer nie zwrócił pełnej listy graczy w tym odświeżeniu (to zależy od endpointu zapytań).</div></div>';
     }
 
     function renderServerDetails(server, colspan) {
@@ -421,6 +451,7 @@
               <div class="detail-item" title="Adres do połączenia"><span class="label">IP:port</span>${escapeHtml(server.ip || '—')}</div>
               <div class="detail-item" title="Ping z ostatniego live query"><span class="label">Ping</span>${typeof server.ping === 'number' ? server.ping + ' ms' : '—'}</div>
               <div class="detail-item" title="Źródło liczby graczy"><span class="label">Źródło graczy</span>${escapeHtml(server.playerCountSource || 'unknown')}</div>
+              <div class="detail-item" title="Skrócone znaczniki statusu"><span class="label">Status</span>${serverBadges(server, server.players >= server.maxplayers, buildRelatedServerMeta([server]), true) || '<span class="muted">brak dodatkowych znaczników</span>'}</div>
               <div class="detail-item" title="Kiedy serwer był ostatnio widziany"><span class="label">lastSeenAt</span>${escapeHtml(formatDateTime(server.lastSeenAt))}</div>
               <div class="detail-item" title="Ile kolejnych odświeżeń serwer pominął"><span class="label">Missed refresh</span>${Number.isInteger(server.missedRefreshCount) ? server.missedRefreshCount : '—'}</div>
               <div class="detail-item" title="Stabilność obecności serwera"><span class="label">Stability</span>${escapeHtml(server.stabilityState || 'unknown')}</div>
@@ -476,7 +507,7 @@
       return { hostCounts, nameCounts };
     }
 
-    function serverBadges(server, isFull, relatedMeta) {
+    function serverBadges(server, isFull, relatedMeta, includeRelated) {
       const badges = [];
       if (isFull) badges.push('<span class="badge full">full</span>');
       if (server.playerCountSource === 'gamedig_live') badges.push('<span class="badge live">live</span>');
@@ -490,7 +521,7 @@
       const sameHostCount = host ? (relatedMeta.hostCounts.get(host) || 0) : 0;
       const nameKey = String(server.name || '').trim().toLowerCase();
       const sameNameCount = nameKey ? (relatedMeta.nameCounts.get(nameKey) || 0) : 0;
-      if (sameHostCount > 1 || sameNameCount > 1) {
+      if (includeRelated && (sameHostCount > 1 || sameNameCount > 1)) {
         badges.push('<span class="badge related" title="Podobna nazwa lub wspólny host — to osobny serwer (inne IP:port)">podobny</span>');
       }
 
@@ -534,12 +565,14 @@
       const liveCount = filtered.filter((s) => s.playerCountSource === 'gamedig_live').length;
       const fallbackCount = filtered.filter((s) => s.playerCountSource === 'steam_fallback').length;
 
-      const stats = [
-        'Pokazane: ' + filtered.length + '/' + servers.length,
-        'Śr. ping: ' + avgPing,
-        'Pełne: ' + fullCount,
-        'Live/Fallback: ' + liveCount + '/' + fallbackCount
-      ];
+      const stats = ['Znaleziono ' + filtered.length];
+      if (state.advancedView) {
+        stats.push(
+          'Śr. ping: ' + avgPing,
+          'Pełne: ' + fullCount,
+          'Live/Fallback: ' + liveCount + '/' + fallbackCount
+        );
+      }
 
       document.getElementById('statsBar').innerHTML = stats.map((text) => '<span class="stat-chip">' + text + '</span>').join('');
     }
@@ -610,15 +643,15 @@
         const metaCol = state.advancedView
           ? '<td title="Źródło i stabilność"><span class="muted">' + escapeHtml(s.playerCountSource || 'unknown') + '</span><br>' + escapeHtml(s.stabilityState || 'stable') + '</td>'
           : '';
+        const mainBadges = state.advancedView ? serverBadges(s, isFull, relatedMeta, true) : '';
 
         return `
           <tr class="expandable-row ${isExpanded ? 'expanded' : ''}" onclick="handleRowClick(event, decodeURIComponent('${encodeInlineArg(s.ip)}'))" title="Kliknij, aby ${isExpanded ? 'zwinąć' : 'rozwinąć'} szczegóły">
-            <td class="flag">${getFlag(s.country)}</td>
+            <td><span class="flag">${getFlag(s.country)}</span></td>
             <td>
               <span class="server-name">${escapeHtml(s.name)}</span>
-              <span class="badges">${serverBadges(s, isFull, relatedMeta)}</span>
+              ${mainBadges ? '<span class="badges">' + mainBadges + '</span>' : ''}
               <div class="muted" title="Adres serwera">${escapeHtml(s.ip || '—')}</div>
-              ${((getHostPart(s.ip) && (relatedMeta.hostCounts.get(getHostPart(s.ip)) || 0) > 1) || ((relatedMeta.nameCounts.get(String(s.name || '').trim().toLowerCase()) || 0) > 1)) ? '<div class="muted">Osobny wpis: inny port/endpoint.</div>' : ''}
             </td>
             <td class="players ${isFull ? 'full' : ''}" title="Źródło graczy: ${escapeHtml(s.playerCountSource || 'unknown')}">${s.players}/${s.maxplayers}</td>
             <td class="ping ${ping.cls}" title="Ping z live query">${ping.label}</td>
