@@ -149,6 +149,13 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
 
         const uniqueServers = dedupeByAddr(slotFiltered);
 
+        const listedIps = new Set(
+          uniqueServers
+            .map((server) => server._parsedAddr || parseServerAddr(server.addr))
+            .filter(Boolean)
+            .map((parsed) => parsed.normalized)
+        );
+
         const processed = await mapLimit(
           uniqueServers,
           config.workerConcurrency,
@@ -212,6 +219,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
 
         for (const previous of state.cachedServers) {
           if (seenIps.has(previous.ip)) continue;
+          if (!listedIps.has(previous.ip)) continue;
+
           const nextMissed = coerceNonNegativeInt(previous.missedRefreshCount, 0) + 1;
           if (nextMissed > graceMissLimit) continue;
 
