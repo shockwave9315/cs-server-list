@@ -90,8 +90,15 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(snapshot.freshness, 'fresh');
 });
 
-test('refresh service keeps previously seen server for grace misses and marks stability transitions', async () => {
-  const fetches = [[createSingleServer()], [], [], []];
+test('refresh service keeps previously seen server for grace misses only when still listed and processing fails', async () => {
+  const fetches = [
+    [createSingleServer()],
+    [createSingleServer()],
+    [createSingleServer()],
+    [createSingleServer()]
+  ];
+  let queryAttempts = 0;
+
   const refreshService = createRefreshService({
     config: createConfig(),
     logger: createLogger(),
@@ -102,7 +109,11 @@ test('refresh service keeps previously seen server for grace misses and marks st
       getCountry: async () => 'PL'
     },
     gameDigService: {
-      queryServerMeta: async () => ({ playerCount: 7, players: ['active'], ping: 30 })
+      queryServerMeta: async () => {
+        queryAttempts += 1;
+        if (queryAttempts === 1) return { playerCount: 7, players: ['active'], ping: 30 };
+        throw new Error('query failed');
+      }
     }
   });
 
@@ -129,6 +140,30 @@ test('refresh service keeps previously seen server for grace misses and marks st
   await refreshService.refreshServers('miss-3');
   const fourth = refreshService.getSnapshot();
   assert.equal(fourth.count, 0);
+});
+
+test('refresh service drops previously seen servers immediately when absent from authoritative steam list', async () => {
+  const fetches = [[createSingleServer()], []];
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async () => fetches.shift() || []
+    },
+    geoIpService: {
+      getCountry: async () => 'PL'
+    },
+    gameDigService: {
+      queryServerMeta: async () => ({ playerCount: 7, players: ['active'], ping: 30 })
+    }
+  });
+
+  await refreshService.refreshServers('seed');
+  assert.equal(refreshService.getSnapshot().count, 1);
+
+  await refreshService.refreshServers('absent');
+  const snapshot = refreshService.getSnapshot();
+  assert.equal(snapshot.count, 0);
 });
 
 test('refresh service uses steam fallback source when live query is unavailable', async () => {
