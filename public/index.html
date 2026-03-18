@@ -362,6 +362,7 @@
     let autoRefreshDueAt = null;
     let isFetchingServers = false;
     let pendingFetchAfterCurrent = false;
+    let refreshCyclePromise = null;
     let latestSnapshot = null;
     let favorites = loadFavorites();
     let watchedServers = loadIpSet(watchedStorageKey);
@@ -1010,8 +1011,19 @@
 
       autoRefreshDueAt = Date.now() + state.autoRefreshSec * 1000;
       autoRefreshTimer = setTimeout(async () => {
-        await fetchServers();
-        scheduleAutoRefresh();
+        if (document.visibilityState !== 'visible') {
+          scheduleAutoRefresh();
+          return;
+        }
+
+        try {
+          await runRefreshCycle();
+        } catch (err) {
+          document.getElementById('statusText').textContent =
+            'Status: nie udało się odświeżyć (pozostawiono poprzednie wyniki)';
+        } finally {
+          scheduleAutoRefresh();
+        }
       }, state.autoRefreshSec * 1000);
     }
 
@@ -1050,30 +1062,55 @@
       }
     }
 
+    async function runRefreshCycle(options = {}) {
+      if (refreshCyclePromise) {
+        return refreshCyclePromise;
+      }
+
+      const { updateManualButton = false } = options;
+      const btn = updateManualButton ? document.querySelector('.btn-refresh') : null;
+
+      refreshCyclePromise = (async () => {
+        if (btn) {
+          btn.textContent = '⏳ Szukam...';
+          btn.disabled = true;
+        }
+
+        try {
+          const res = await fetch('/api/refresh', { method: 'POST' });
+          if (!res.ok && res.status !== 202) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || data.status || 'Refresh failed');
+          }
+          await fetchServers();
+        } finally {
+          if (btn) {
+            btn.textContent = '🔄 Odśwież';
+            btn.disabled = false;
+          }
+        }
+      })();
+
+      try {
+        return await refreshCyclePromise;
+      } finally {
+        refreshCyclePromise = null;
+      }
+    }
+
     async function manualRefresh() {
-      const btn = document.querySelector('.btn-refresh');
       const now = Date.now();
       if (now - lastManualRefreshAt < refreshCooldownMs) {
         return;
       }
       lastManualRefreshAt = now;
 
-      btn.textContent = '⏳ Szukam...';
-      btn.disabled = true;
-
       try {
-        const res = await fetch('/api/refresh', { method: 'POST' });
-        if (!res.ok && res.status !== 202) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || data.status || 'Refresh failed');
-        }
-        await fetchServers();
+        await runRefreshCycle({ updateManualButton: true });
       } catch (err) {
         document.getElementById('statusText').textContent =
           'Status: nie udało się odświeżyć (pozostawiono poprzednie wyniki)';
       } finally {
-        btn.textContent = '🔄 Odśwież';
-        btn.disabled = false;
         scheduleAutoRefresh();
       }
     }
