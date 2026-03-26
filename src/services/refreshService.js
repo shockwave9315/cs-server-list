@@ -81,6 +81,12 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     return buildFreshness(state.lastSuccessAt, config.maxStaleMs);
   }
 
+  function normalizeMapScope(scope) {
+    if (typeof scope !== 'string') return 'all';
+    if (scope === 'all') return 'all';
+    return config.allowedMapsSet.has(scope) ? scope : 'all';
+  }
+
   async function persistSnapshot() {
     if (!config.snapshotCacheFile || !config.persistSnapshotOnRefresh) return;
 
@@ -130,18 +136,19 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     }
   }
 
-  async function refreshServers(trigger = 'manual') {
+  async function refreshServers(trigger = 'manual', options = {}) {
     if (state.refreshInProgress) {
       return { status: 'busy' };
     }
 
+    const mapScope = normalizeMapScope(options.mapScope);
     state.refreshInProgress = true;
     state.refreshPromise = (async () => {
       const startedAt = Date.now();
-      logger.info('refresh.start', { trigger });
+      logger.info('refresh.start', { trigger, mapScope });
 
       try {
-        const rawServers = await steamService.fetchServerList();
+        const rawServers = await steamService.fetchServerList({ mapScope });
 
         const mergedUniqueServers = dedupeByAddr(rawServers);
 
@@ -251,6 +258,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
 
         logger.info('refresh.done', {
           trigger,
+          mapScope,
           rawCount: rawServers.length,
           mergedUniqueCount: mergedUniqueServers.length,
           authoritativeFiltered: authoritativeServers.length,

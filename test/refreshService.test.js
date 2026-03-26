@@ -320,3 +320,73 @@ test('refresh service merges multi-map authoritative snapshot in one refresh', a
   assert.equal(snapshot.count, 3);
   assert.deepEqual(maps, new Set(['de_dust2', 'de_mirage', 'de_inferno']));
 });
+
+test('refresh service uses selected map scope for backend collection', async () => {
+  const observedScopes = [];
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async ({ mapScope } = {}) => {
+        observedScopes.push(mapScope);
+        if (mapScope === 'de_dust2') {
+          return [{ addr: '7.7.7.7:27015', map: 'de_dust2', name: 'Dust', players: 5, max_players: 10 }];
+        }
+        return [
+          { addr: '7.7.7.7:27015', map: 'de_dust2', name: 'Dust', players: 5, max_players: 10 },
+          { addr: '7.7.7.7:27016', map: 'de_mirage', name: 'Mirage', players: 5, max_players: 10 }
+        ];
+      }
+    },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: { queryServerMeta: async () => ({ playerCount: 5, players: [], ping: 35 }) }
+  });
+
+  await refreshService.refreshServers('scoped', { mapScope: 'de_dust2' });
+  assert.deepEqual(observedScopes, ['de_dust2']);
+  assert.equal(refreshService.getSnapshot().count, 1);
+
+  await refreshService.refreshServers('all', { mapScope: 'all' });
+  assert.deepEqual(observedScopes, ['de_dust2', 'all']);
+  assert.equal(refreshService.getSnapshot().count, 2);
+});
+
+test('refresh service falls back to all scope for unknown map values', async () => {
+  const observedScopes = [];
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async ({ mapScope } = {}) => {
+        observedScopes.push(mapScope);
+        return [{ addr: '8.8.8.8:27015', map: 'de_dust2', name: 'Dust', players: 5, max_players: 10 }];
+      }
+    },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: { queryServerMeta: async () => ({ playerCount: 5, players: [], ping: 35 }) }
+  });
+
+  await refreshService.refreshServers('invalid-scope', { mapScope: 'de_cache' });
+  assert.deepEqual(observedScopes, ['all']);
+});
+
+test('refresh service treats map scope as request-scoped and defaults to all when omitted', async () => {
+  const observedScopes = [];
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async ({ mapScope } = {}) => {
+        observedScopes.push(mapScope);
+        return [{ addr: '9.9.9.9:27015', map: 'de_dust2', name: 'Dust', players: 5, max_players: 10 }];
+      }
+    },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: { queryServerMeta: async () => ({ playerCount: 5, players: [], ping: 35 }) }
+  });
+
+  await refreshService.refreshServers('manual', { mapScope: 'de_dust2' });
+  await refreshService.refreshServers('scheduler');
+
+  assert.deepEqual(observedScopes, ['de_dust2', 'all']);
+});

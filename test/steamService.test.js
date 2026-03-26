@@ -42,3 +42,36 @@ test('steam service fetches each allowed map and merges results', async () => {
     axios.get = originalGet;
   }
 });
+
+test('steam service fetches only scoped map when provided', async () => {
+  const calls = [];
+  const originalGet = axios.get;
+
+  axios.get = async (_url, options) => {
+    calls.push(options.params.filter);
+    return {
+      data: {
+        response: {
+          servers: [{ addr: '10.0.0.10:27015', map: 'de_dust2', max_players: 10, players: 2, name: 'de_dust2' }]
+        }
+      }
+    };
+  };
+
+  try {
+    const config = {
+      steamApiKey: 'key',
+      appId: '4465480',
+      steamLimit: 500,
+      allowedMaps: ['de_dust2', 'de_mirage', 'de_inferno']
+    };
+
+    const service = createSteamService(config);
+    await service.fetchServerList({ mapScope: 'de_dust2' });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0], '\\appid\\4465480\\map\\de_dust2');
+  } finally {
+    axios.get = originalGet;
+  }
+});

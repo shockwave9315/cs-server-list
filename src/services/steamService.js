@@ -1,10 +1,16 @@
 import axios from 'axios';
 
 export function createSteamService(config) {
-  async function fetchServerList() {
+  function resolveMapsForScope(scope) {
+    if (!scope || scope === 'all') return config.allowedMaps;
+    return config.allowedMaps.includes(scope) ? [scope] : config.allowedMaps;
+  }
+
+  async function fetchServerList(options = {}) {
+    const mapsToFetch = resolveMapsForScope(options.mapScope);
     const url = 'https://api.steampowered.com/IGameServersService/GetServerList/v1/';
     const responses = await Promise.all(
-      config.allowedMaps.map((map) =>
+      mapsToFetch.map((map) =>
         axios.get(url, {
           params: {
             key: config.steamApiKey,
