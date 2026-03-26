@@ -1096,6 +1096,8 @@
       const { updateManualButton = false } = options;
       const btn = updateManualButton ? document.querySelector('.btn-refresh') : null;
 
+      const activeMapScope = state.map === 'all' ? 'all' : state.map;
+
       refreshCyclePromise = (async () => {
         if (btn) {
           btn.textContent = '⏳ Szukam...';
@@ -1103,7 +1105,11 @@
         }
 
         try {
-          const res = await fetch('/api/refresh', { method: 'POST' });
+          const res = await fetch('/api/refresh', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ mapScope: activeMapScope })
+          });
           if (!res.ok && res.status !== 202) {
             const data = await res.json().catch(() => ({}));
             throw new Error(data.error || data.status || 'Refresh failed');

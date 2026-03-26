@@ -27,3 +27,9 @@ test('frontend applies map filter locally and keeps all maps as default state', 
   assert.doesNotMatch(handler, /fetch\(/);
   assert.doesNotMatch(handler, /runRefreshCycle\(/);
 });
+
+test('frontend sends current map scope on refresh cycles', async () => {
+  const html = await loadHtml();
+  assert.match(html, /const activeMapScope = state\.map === 'all' \? 'all' : state\.map;/);
+  assert.match(html, /body:\s*JSON\.stringify\(\{\s*mapScope:\s*activeMapScope\s*\}\)/);
+});
