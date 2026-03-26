@@ -19,7 +19,11 @@ export function createApiRouter({ refreshService, config }) {
       }
     }
 
-    const result = await refreshService.refreshServers('manual');
+    const requestedScope = req.body && typeof req.body === 'object'
+      ? req.body.mapScope
+      : undefined;
+
+    const result = await refreshService.refreshServers('manual', { mapScope: requestedScope });
     if (result.status === 'busy') {
       return res.status(202).json({ status: 'busy' });
     }

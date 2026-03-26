@@ -81,6 +81,12 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     return buildFreshness(state.lastSuccessAt, config.maxStaleMs);
   }
 
+  function normalizeMapScope(scope) {
+    if (typeof scope !== 'string') return 'all';
+    if (scope === 'all') return 'all';
+    return config.allowedMapsSet.has(scope) ? scope : 'all';
+  }
+
   async function persistSnapshot() {
     if (!config.snapshotCacheFile || !config.persistSnapshotOnRefresh) return;
 
@@ -130,24 +136,29 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     }
   }
 
-  async function refreshServers(trigger = 'manual') {
+  async function refreshServers(trigger = 'manual', options = {}) {
     if (state.refreshInProgress) {
       return { status: 'busy' };
     }
 
+    const mapScope = normalizeMapScope(options.mapScope);
     state.refreshInProgress = true;
     state.refreshPromise = (async () => {
       const startedAt = Date.now();
-      logger.info('refresh.start', { trigger });
+      logger.info('refresh.start', { trigger, mapScope });
 
       try {
-        const rawServers = await steamService.fetchServerList();
+        const rawServers = await steamService.fetchServerList({ mapScope });
 
-        const slotFiltered = rawServers.filter(
-          (s) => s.max_players >= config.minSlots && s.max_players <= config.maxSlots
-        );
+        const mergedUniqueServers = dedupeByAddr(rawServers);
 
-        const uniqueServers = dedupeByAddr(slotFiltered);
+        const authoritativeServers = mergedUniqueServers.filter((server) => {
+          if (server.max_players !== config.requiredMaxPlayers) return false;
+          const map = typeof server.map === 'string' ? server.map.toLowerCase() : '';
+          return config.allowedMapsSet.has(map);
+        });
+
+        const uniqueServers = authoritativeServers;
 
         const listedIps = new Set(
           uniqueServers
@@ -247,8 +258,10 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
 
         logger.info('refresh.done', {
           trigger,
+          mapScope,
           rawCount: rawServers.length,
-          slotFiltered: slotFiltered.length,
+          mergedUniqueCount: mergedUniqueServers.length,
+          authoritativeFiltered: authoritativeServers.length,
           uniqueCount: uniqueServers.length,
           finalCount: filtered.length,
           durationMs: Date.now() - startedAt
