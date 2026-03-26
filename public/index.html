@@ -284,7 +284,7 @@
 </head>
 <body>
   <h1>🎮 CS:GO Server Browser</h1>
-  <p class="subtitle">de_dust2 · 8–10 slotów · Polska & Niemcy</p>
+  <p class="subtitle">Mapy aktywnej puli · 10 slotów · Polska & Niemcy</p>
 
   <div class="status">
     <span id="statusText" class="status-ok">Status: oczekiwanie na dane</span>
@@ -302,6 +302,12 @@
       <label for="countryFilter">Kraj</label>
       <select id="countryFilter">
         <option value="all">Wszystkie</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label for="mapFilter">Mapa</label>
+      <select id="mapFilter">
+        <option value="all">Wszystkie mapy</option>
       </select>
     </div>
     <div class="control-group">
@@ -372,6 +378,7 @@
     const state = {
       search: '',
       country: 'all',
+      map: 'all',
       sort: 'players_desc',
       hideFull: false,
       favoritesOnly: false,
@@ -852,6 +859,7 @@
         if (hiddenServers.has(s.ip)) return false;
         if (state.search && !s.name.toLowerCase().includes(state.search)) return false;
         if (state.country !== 'all' && s.country !== state.country) return false;
+        if (state.map !== 'all' && s.map !== state.map) return false;
         if (state.hideFull && s.players >= s.maxplayers) return false;
         if (state.favoritesOnly && !favorites.has(s.ip)) return false;
         return true;
@@ -864,6 +872,7 @@
       if (filtered.length === 0) {
         const hasActiveFilters = Boolean(state.search)
           || state.country !== 'all'
+          || state.map !== 'all'
           || state.hideFull
           || state.favoritesOnly;
 
@@ -938,6 +947,22 @@
       } else {
         select.value = 'all';
         state.country = 'all';
+      }
+    }
+
+    function updateMapOptions(servers) {
+      const select = document.getElementById('mapFilter');
+      const prev = state.map;
+      const maps = Array.from(new Set(servers.map((s) => s.map).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pl'));
+      select.innerHTML = '<option value="all">Wszystkie mapy</option>' + maps
+        .map((map) => '<option value="' + escapeHtml(map) + '">' + escapeHtml(map) + '</option>')
+        .join('');
+
+      if (maps.includes(prev)) {
+        select.value = prev;
+      } else {
+        select.value = 'all';
+        state.map = 'all';
       }
     }
 
@@ -1050,6 +1075,7 @@
         }
 
         updateCountryOptions(currentServers);
+        updateMapOptions(currentServers);
         applyAndRender();
       } catch (err) {
         document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem (pozostawiono poprzednie wyniki)';
@@ -1123,6 +1149,11 @@
 
       document.getElementById('countryFilter').addEventListener('change', (event) => {
         state.country = event.target.value;
+        applyAndRender();
+      });
+
+      document.getElementById('mapFilter').addEventListener('change', (event) => {
+        state.map = event.target.value;
         applyAndRender();
       });
 

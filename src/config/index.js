@@ -24,16 +24,37 @@ function parseCountries(raw) {
     .filter(Boolean);
 }
 
+export const ALL_CSGO_MAPS = [
+  'de_dust2',
+  'de_dust',
+  'de_mirage',
+  'de_inferno',
+  'de_nuke',
+  'de_overpass',
+  'de_vertigo',
+  'de_ancient',
+  'de_anubis',
+  'de_cache',
+  'de_train',
+  'de_cobblestone',
+  'de_tuscan',
+  'de_season',
+  'de_canals',
+  'cs_office',
+  'cs_italy',
+  'de_basalt',
+  'de_thera'
+];
+
 export function loadConfig() {
   const steamApiKey = process.env.STEAM_API_KEY;
   if (!steamApiKey) {
     throw new Error('Missing required env: STEAM_API_KEY');
   }
 
-  const minSlots = parseIntEnv('MIN_SLOTS', 8);
-  const maxSlots = parseIntEnv('MAX_SLOTS', 10);
-  if (minSlots > maxSlots) {
-    throw new Error(`Invalid slot range: MIN_SLOTS (${minSlots}) > MAX_SLOTS (${maxSlots})`);
+  const requiredMaxPlayers = parseIntEnv('REQUIRED_MAX_PLAYERS', 10);
+  if (requiredMaxPlayers < 1) {
+    throw new Error('REQUIRED_MAX_PLAYERS must be >= 1');
   }
 
   const port = parseIntEnv('PORT', 3000);
@@ -62,12 +83,12 @@ export function loadConfig() {
     env: process.env.NODE_ENV || 'development',
     port,
     steamApiKey,
-    targetMap: process.env.TARGET_MAP || 'de_dust2',
     appId: process.env.APP_ID || '4465480',
     allowedCountries,
     allowedCountriesSet: new Set(allowedCountries),
-    minSlots,
-    maxSlots,
+    requiredMaxPlayers,
+    allowedMaps: ALL_CSGO_MAPS,
+    allowedMapsSet: new Set(ALL_CSGO_MAPS),
     steamLimit,
     autoRefreshEnabled: parseBoolEnv('AUTO_REFRESH_ENABLED', true),
     refreshIntervalMs,

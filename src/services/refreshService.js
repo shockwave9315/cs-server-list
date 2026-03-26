@@ -143,11 +143,15 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
       try {
         const rawServers = await steamService.fetchServerList();
 
-        const slotFiltered = rawServers.filter(
-          (s) => s.max_players >= config.minSlots && s.max_players <= config.maxSlots
-        );
+        const mergedUniqueServers = dedupeByAddr(rawServers);
 
-        const uniqueServers = dedupeByAddr(slotFiltered);
+        const authoritativeServers = mergedUniqueServers.filter((server) => {
+          if (server.max_players !== config.requiredMaxPlayers) return false;
+          const map = typeof server.map === 'string' ? server.map.toLowerCase() : '';
+          return config.allowedMapsSet.has(map);
+        });
+
+        const uniqueServers = authoritativeServers;
 
         const listedIps = new Set(
           uniqueServers
@@ -248,7 +252,8 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
         logger.info('refresh.done', {
           trigger,
           rawCount: rawServers.length,
-          slotFiltered: slotFiltered.length,
+          mergedUniqueCount: mergedUniqueServers.length,
+          authoritativeFiltered: authoritativeServers.length,
           uniqueCount: uniqueServers.length,
           finalCount: filtered.length,
           durationMs: Date.now() - startedAt
