@@ -285,6 +285,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     const freshness = getFreshness();
     return {
       servers: state.cachedServers,
+      allowedMaps: config.allowedMaps,
       lastUpdate: state.lastUpdate,
       lastSuccessAt: state.lastSuccessAt,
       freshness: freshness.status,

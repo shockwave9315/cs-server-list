@@ -950,10 +950,15 @@
       }
     }
 
-    function updateMapOptions(servers) {
+    function updateMapOptions(servers, allowedMaps) {
       const select = document.getElementById('mapFilter');
       const prev = state.map;
-      const maps = Array.from(new Set(servers.map((s) => s.map).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pl'));
+      const maps = Array.isArray(allowedMaps) && allowedMaps.length
+        ? allowedMaps
+            .filter((map) => typeof map === 'string' && map.trim() !== '')
+            .map((map) => map.trim())
+            .sort((a, b) => a.localeCompare(b, 'pl'))
+        : Array.from(new Set(servers.map((s) => s.map).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pl'));
       select.innerHTML = '<option value="all">Wszystkie mapy</option>' + maps
         .map((map) => '<option value="' + escapeHtml(map) + '">' + escapeHtml(map) + '</option>')
         .join('');
@@ -1018,12 +1023,17 @@
           return;
         }
 
+        if (refreshCyclePromise) {
+          el.textContent = 'Odświeżanie...';
+          return;
+        }
+
         const leftMs = Math.max(0, autoRefreshDueAt - Date.now());
         el.textContent = Math.ceil(leftMs / 1000) + 's';
       }, 300);
     }
 
-    function scheduleAutoRefresh() {
+    function scheduleAutoRefresh(nextCycleStartAt) {
       if (autoRefreshTimer) {
         clearTimeout(autoRefreshTimer);
         autoRefreshTimer = null;
@@ -1034,10 +1044,18 @@
         return;
       }
 
-      autoRefreshDueAt = Date.now() + state.autoRefreshSec * 1000;
+      const intervalMs = state.autoRefreshSec * 1000;
+      const now = Date.now();
+      const cycleStartAt = typeof nextCycleStartAt === 'number'
+        ? nextCycleStartAt
+        : now + intervalMs;
+      const delayMs = Math.max(0, cycleStartAt - now);
+
+      autoRefreshDueAt = cycleStartAt;
       autoRefreshTimer = setTimeout(async () => {
+        const scheduledCycleStartAt = autoRefreshDueAt || Date.now();
         if (document.visibilityState !== 'visible') {
-          scheduleAutoRefresh();
+          scheduleAutoRefresh(Date.now() + intervalMs);
           return;
         }
 
@@ -1047,9 +1065,10 @@
           document.getElementById('statusText').textContent =
             'Status: nie udało się odświeżyć (pozostawiono poprzednie wyniki)';
         } finally {
-          scheduleAutoRefresh();
+          const nextCycleStart = scheduledCycleStartAt + intervalMs;
+          scheduleAutoRefresh(nextCycleStart <= Date.now() ? Date.now() : nextCycleStart);
         }
-      }, state.autoRefreshSec * 1000);
+      }, delayMs);
     }
 
     async function fetchServers() {
@@ -1075,7 +1094,7 @@
         }
 
         updateCountryOptions(currentServers);
-        updateMapOptions(currentServers);
+        updateMapOptions(currentServers, data.allowedMaps);
         applyAndRender();
       } catch (err) {
         document.getElementById('statusText').textContent = 'Status: błąd połączenia z backendem (pozostawiono poprzednie wyniki)';

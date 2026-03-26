@@ -61,12 +61,16 @@ export function loadConfig() {
   const refreshIntervalMs = parseIntEnv('REFRESH_INTERVAL_MS', 5 * 60 * 1000);
   const countryCacheTtlMs = parseIntEnv('COUNTRY_CACHE_TTL_MS', 60 * 60 * 1000);
   const steamLimit = parseIntEnv('STEAM_LIMIT', 500);
+  const steamMapFetchConcurrency = parseIntEnv('STEAM_MAP_FETCH_CONCURRENCY', 4);
   const workerConcurrency = parseIntEnv('WORKER_CONCURRENCY', 20);
   const maxStaleMs = parseIntEnv('MAX_STALE_MS', 15 * 60 * 1000);
   const shutdownRefreshWaitMs = parseIntEnv('SHUTDOWN_REFRESH_WAIT_MS', 3000);
 
   if (workerConcurrency < 1) {
     throw new Error('WORKER_CONCURRENCY must be >= 1');
+  }
+  if (steamMapFetchConcurrency < 1) {
+    throw new Error('STEAM_MAP_FETCH_CONCURRENCY must be >= 1');
   }
 
   if (maxStaleMs < 0) {
@@ -90,6 +94,7 @@ export function loadConfig() {
     allowedMaps: ALL_CSGO_MAPS,
     allowedMapsSet: new Set(ALL_CSGO_MAPS),
     steamLimit,
+    steamMapFetchConcurrency,
     autoRefreshEnabled: parseBoolEnv('AUTO_REFRESH_ENABLED', true),
     refreshIntervalMs,
     manualRefreshToken: process.env.REFRESH_TOKEN || '',

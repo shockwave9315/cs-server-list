@@ -16,6 +16,7 @@ function createLogger() {
 function createConfig(overrides = {}) {
   return {
     requiredMaxPlayers: 10,
+    allowedMaps: ['de_dust2', 'de_mirage', 'de_inferno'],
     allowedMapsSet: new Set(['de_dust2', 'de_mirage', 'de_inferno']),
     allowedCountriesSet: new Set(['PL', 'DE']),
     workerConcurrency: 2,
@@ -389,4 +390,5 @@ test('refresh service treats map scope as request-scoped and defaults to all whe
   await refreshService.refreshServers('scheduler');
 
   assert.deepEqual(observedScopes, ['de_dust2', 'all']);
+  assert.deepEqual(refreshService.getSnapshot().allowedMaps, ['de_dust2', 'de_mirage', 'de_inferno']);
 });
