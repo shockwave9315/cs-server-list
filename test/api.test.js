@@ -56,18 +56,27 @@ test('GET /api/servers returns snapshot payload', async () => {
 });
 
 test('POST /api/refresh returns success payload', async () => {
+  const calls = [];
   await withServer(
     {
       config: createConfig(),
       refreshService: {
         getSnapshot: () => ({ freshness: 'never_succeeded', refreshInProgress: false, stale: true, lastError: null }),
-        refreshServers: async () => ({ status: 'success', count: 7 })
+        refreshServers: async (_trigger, options = {}) => {
+          calls.push(options.mapScope);
+          return { status: 'success', count: 7 };
+        }
       }
     },
     async (baseUrl) => {
-      const res = await fetch(`${baseUrl}/api/refresh`, { method: 'POST' });
+      const res = await fetch(`${baseUrl}/api/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mapScope: 'de_dust2' })
+      });
       assert.equal(res.status, 200);
       assert.deepEqual(await res.json(), { status: 'success', count: 7 });
+      assert.deepEqual(calls, ['de_dust2']);
     }
   );
 });
