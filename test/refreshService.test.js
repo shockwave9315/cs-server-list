@@ -15,8 +15,8 @@ function createLogger() {
 
 function createConfig(overrides = {}) {
   return {
-    minSlots: 8,
-    maxSlots: 10,
+    requiredMaxPlayers: 10,
+    allowedMapsSet: new Set(['de_dust2', 'de_mirage', 'de_inferno']),
     allowedCountriesSet: new Set(['PL', 'DE']),
     workerConcurrency: 2,
     maxStaleMs: 1000,
@@ -32,7 +32,7 @@ function createConfig(overrides = {}) {
 function createSingleServer() {
   return {
     addr: '1.2.3.4:27015',
-    max_players: 8,
+    max_players: 10,
     players: 5,
     name: 'Srv',
     map: 'de_dust2'
@@ -201,7 +201,7 @@ test('refresh service restores backward-compatible snapshot payloads with additi
           name: 'Legacy',
           ip: '5.6.7.8:27015',
           players: 3,
-          maxplayers: 8,
+          maxplayers: 10,
           map: 'de_mirage',
           country: 'DE'
         }
@@ -235,9 +235,9 @@ test('refresh service restores backward-compatible snapshot payloads with additi
 
 test('refresh service preserves data-driven player list status from live-like fixtures', async () => {
   const variants = [
-    { addr: '1.1.1.1:27015', map: 'de_dust2', name: 'A', players: 1, max_players: 8 },
-    { addr: '1.1.1.1:27016', map: 'de_inferno', name: 'B', players: 0, max_players: 8 },
-    { addr: '1.1.1.1:27017', map: 'de_mirage', name: 'C', players: 2, max_players: 8 }
+    { addr: '1.1.1.1:27015', map: 'de_dust2', name: 'A', players: 1, max_players: 10 },
+    { addr: '1.1.1.1:27016', map: 'de_inferno', name: 'B', players: 0, max_players: 10 },
+    { addr: '1.1.1.1:27017', map: 'de_mirage', name: 'C', players: 2, max_players: 10 }
   ];
 
   const byPort = new Map([
@@ -263,4 +263,60 @@ test('refresh service preserves data-driven player list status from live-like fi
   assert.equal(statusByIp.get('1.1.1.1:27015'), 'available');
   assert.equal(statusByIp.get('1.1.1.1:27016'), 'empty');
   assert.equal(statusByIp.get('1.1.1.1:27017'), 'filtered_invalid');
+});
+
+
+test('refresh service keeps only exact 10-slot servers on allowed maps', async () => {
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async () => [
+        { addr: '2.2.2.2:27015', map: 'de_dust2', name: 'Good', players: 5, max_players: 10 },
+        { addr: '2.2.2.2:27015', map: 'de_dust2', name: 'Good duplicate', players: 6, max_players: 10 },
+        { addr: '2.2.2.2:27016', map: 'de_mirage', name: 'WrongSlotsLow', players: 5, max_players: 9 },
+        { addr: '2.2.2.2:27017', map: 'de_inferno', name: 'WrongSlotsHigh', players: 5, max_players: 12 },
+        { addr: '2.2.2.2:27018', map: 'workshop_123/custom_map', name: 'Custom', players: 5, max_players: 10 }
+      ]
+    },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: { queryServerMeta: async () => ({ playerCount: 5, players: [], ping: 35 }) }
+  });
+
+  await refreshService.refreshServers('filtering');
+  const snapshot = refreshService.getSnapshot();
+
+  assert.equal(snapshot.count, 1);
+  assert.equal(snapshot.servers[0].ip, '2.2.2.2:27015');
+  assert.equal(snapshot.servers[0].map, 'de_dust2');
+  assert.equal(snapshot.servers[0].maxplayers, 10);
+});
+
+test('refresh service merges multi-map authoritative snapshot in one refresh', async () => {
+  const refreshService = createRefreshService({
+    config: createConfig(),
+    logger: createLogger(),
+    steamService: {
+      fetchServerList: async () => [
+        { addr: '3.3.3.3:27015', map: 'de_dust2', name: 'Dust', players: 6, max_players: 10 },
+        { addr: '3.3.3.3:27016', map: 'de_mirage', name: 'Mirage', players: 4, max_players: 10 },
+        { addr: '3.3.3.3:27017', map: 'de_inferno', name: 'Inferno', players: 3, max_players: 10 }
+      ]
+    },
+    geoIpService: { getCountry: async () => 'PL' },
+    gameDigService: {
+      queryServerMeta: async (_host, port) => ({
+        playerCount: port === 27015 ? 6 : port === 27016 ? 4 : 3,
+        players: [],
+        ping: 40
+      })
+    }
+  });
+
+  await refreshService.refreshServers('multi-map');
+  const snapshot = refreshService.getSnapshot();
+  const maps = new Set(snapshot.servers.map((server) => server.map));
+
+  assert.equal(snapshot.count, 3);
+  assert.deepEqual(maps, new Set(['de_dust2', 'de_mirage', 'de_inferno']));
 });
