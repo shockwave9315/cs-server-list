@@ -68,6 +68,7 @@ function resolveStabilityPolicy(config) {
 export function createRefreshService({ config, logger, steamService, geoIpService, gameDigService }) {
   const state = {
     cachedServers: [],
+    snapshotScope: 'all',
     lastUpdate: null,
     lastSuccessAt: null,
     lastError: null,
@@ -92,6 +93,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
 
     const payload = {
       servers: state.cachedServers,
+      snapshotScope: state.snapshotScope,
       lastUpdate: state.lastUpdate,
       lastSuccessAt: state.lastSuccessAt,
       lastError: state.lastError
@@ -117,6 +119,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
       state.cachedServers = parsed.servers.map((server) =>
         normalizeRestoredServer(server, fallbackSeenAt, staleMissThreshold)
       );
+      state.snapshotScope = normalizeMapScope(parsed.snapshotScope);
       state.lastUpdate = coerceIsoString(parsed.lastUpdate);
       state.lastSuccessAt = coerceIsoString(parsed.lastSuccessAt);
       state.lastError = coerceIsoString(parsed.lastError);
@@ -251,6 +254,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
         const filtered = merged.sort((a, b) => b.players - a.players);
 
         state.cachedServers = filtered;
+        state.snapshotScope = mapScope;
         state.lastUpdate = now;
         state.lastSuccessAt = now;
         state.lastError = null;
@@ -285,6 +289,7 @@ export function createRefreshService({ config, logger, steamService, geoIpServic
     const freshness = getFreshness();
     return {
       servers: state.cachedServers,
+      snapshotScope: state.snapshotScope,
       allowedMaps: config.allowedMaps,
       lastUpdate: state.lastUpdate,
       lastSuccessAt: state.lastSuccessAt,

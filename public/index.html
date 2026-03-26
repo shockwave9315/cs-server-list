@@ -370,6 +370,7 @@
     let pendingFetchAfterCurrent = false;
     let refreshCyclePromise = null;
     let latestSnapshot = null;
+    let currentSnapshotScope = 'all';
     let favorites = loadFavorites();
     let watchedServers = loadIpSet(watchedStorageKey);
     let hiddenServers = loadHiddenServers();
@@ -385,6 +386,13 @@
       autoRefreshSec: 60,
       advancedView: false
     };
+
+    function normalizeScopeValue(scope, allowedMaps = []) {
+      if (scope === 'all') return 'all';
+      if (typeof scope !== 'string') return 'all';
+      if (Array.isArray(allowedMaps) && allowedMaps.includes(scope)) return scope;
+      return 'all';
+    }
 
     function getFlag(country) {
       const normalized = String(country || '').toUpperCase();
@@ -1086,6 +1094,7 @@
         const currentServers = Array.isArray(data.servers) ? data.servers : [];
         checkWatchedTransitions(previousServers, currentServers);
         latestSnapshot = data;
+        currentSnapshotScope = normalizeScopeValue(data.snapshotScope, data.allowedMaps);
         updateStatus(data);
 
         if (data.lastUpdate) {
@@ -1115,7 +1124,7 @@
       const { updateManualButton = false } = options;
       const btn = updateManualButton ? document.querySelector('.btn-refresh') : null;
 
-      const activeMapScope = state.map === 'all' ? 'all' : state.map;
+      const requestedMapScope = normalizeScopeValue(state.map, latestSnapshot?.allowedMaps);
 
       refreshCyclePromise = (async () => {
         if (btn) {
@@ -1127,13 +1136,14 @@
           const res = await fetch('/api/refresh', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ mapScope: activeMapScope })
+            body: JSON.stringify({ mapScope: requestedMapScope })
           });
           if (!res.ok && res.status !== 202) {
             const data = await res.json().catch(() => ({}));
             throw new Error(data.error || data.status || 'Refresh failed');
           }
           await fetchServers();
+          currentSnapshotScope = normalizeScopeValue(latestSnapshot?.snapshotScope ?? requestedMapScope, latestSnapshot?.allowedMaps);
         } finally {
           if (btn) {
             btn.textContent = '🔄 Odśwież';
@@ -1177,9 +1187,25 @@
         applyAndRender();
       });
 
-      document.getElementById('mapFilter').addEventListener('change', (event) => {
-        state.map = event.target.value;
-        applyAndRender();
+      document.getElementById('mapFilter').addEventListener('change', async (event) => {
+        const nextMap = event.target.value;
+        state.map = nextMap;
+
+        const shouldRefreshImmediately = currentSnapshotScope !== 'all' && nextMap !== currentSnapshotScope;
+        if (!shouldRefreshImmediately) {
+          applyAndRender();
+          return;
+        }
+
+        try {
+          await runRefreshCycle();
+        } catch (err) {
+          document.getElementById('statusText').textContent =
+            'Status: nie udało się odświeżyć (pozostawiono poprzednie wyniki)';
+          applyAndRender();
+        } finally {
+          scheduleAutoRefresh();
+        }
       });
 
       document.getElementById('sortSelect').addEventListener('change', (event) => {

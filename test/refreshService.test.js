@@ -72,6 +72,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(persisted.servers[0].playerCountSource, 'gamedig_live');
   assert.deepEqual(persisted.servers[0].playerList, ['one', 'two']);
   assert.equal(persisted.servers[0].playerListStatus, 'available');
+  assert.equal(persisted.snapshotScope, 'all');
 
   const restored = createRefreshService({
     config: createConfig({ snapshotCacheFile: cacheFile }),
@@ -89,6 +90,7 @@ test('refresh service persists and restores snapshot when enabled', async () => 
   assert.equal(snapshot.servers[0].stabilityState, 'stable');
   assert.equal(snapshot.servers[0].playerListStatus, 'available');
   assert.equal(snapshot.freshness, 'fresh');
+  assert.equal(snapshot.snapshotScope, 'all');
 });
 
 test('refresh service keeps previously seen server for grace misses only when still listed and processing fails', async () => {
@@ -346,10 +348,12 @@ test('refresh service uses selected map scope for backend collection', async () 
   await refreshService.refreshServers('scoped', { mapScope: 'de_dust2' });
   assert.deepEqual(observedScopes, ['de_dust2']);
   assert.equal(refreshService.getSnapshot().count, 1);
+  assert.equal(refreshService.getSnapshot().snapshotScope, 'de_dust2');
 
   await refreshService.refreshServers('all', { mapScope: 'all' });
   assert.deepEqual(observedScopes, ['de_dust2', 'all']);
   assert.equal(refreshService.getSnapshot().count, 2);
+  assert.equal(refreshService.getSnapshot().snapshotScope, 'all');
 });
 
 test('refresh service falls back to all scope for unknown map values', async () => {
