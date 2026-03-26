@@ -75,3 +75,42 @@ test('steam service fetches only scoped map when provided', async () => {
     axios.get = originalGet;
   }
 });
+
+test('steam service bounds all-map steam requests with configured concurrency', async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const originalGet = axios.get;
+
+  axios.get = async (_url, options) => {
+    inFlight += 1;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    inFlight -= 1;
+    const map = options.params.filter.split('\\map\\')[1];
+    return {
+      data: {
+        response: {
+          servers: [{ addr: `10.0.1.${map.length}:27015`, map, max_players: 10, players: 2, name: map }]
+        }
+      }
+    };
+  };
+
+  try {
+    const config = {
+      steamApiKey: 'key',
+      appId: '4465480',
+      steamLimit: 500,
+      allowedMaps: ['de_dust2', 'de_mirage', 'de_inferno', 'de_nuke', 'de_overpass'],
+      steamMapFetchConcurrency: 2
+    };
+
+    const service = createSteamService(config);
+    const servers = await service.fetchServerList({ mapScope: 'all' });
+
+    assert.equal(servers.length, 5);
+    assert.ok(maxInFlight <= 2, `expected max concurrency <= 2, received ${maxInFlight}`);
+  } finally {
+    axios.get = originalGet;
+  }
+});

@@ -29,6 +29,7 @@ async function withServer({ config, refreshService }, run) {
 test('GET /api/servers returns snapshot payload', async () => {
   const snapshot = {
     servers: [{ name: 'A', ip: '1.1.1.1:27015', players: 2, maxplayers: 10, map: 'de_dust2', country: 'PL' }],
+    allowedMaps: ['de_dust2', 'de_mirage'],
     lastUpdate: '2024-01-01T00:00:00.000Z',
     lastSuccessAt: '2024-01-01T00:00:00.000Z',
     freshness: 'fresh',
@@ -61,7 +62,7 @@ test('POST /api/refresh returns success payload', async () => {
     {
       config: createConfig(),
       refreshService: {
-        getSnapshot: () => ({ freshness: 'never_succeeded', refreshInProgress: false, stale: true, lastError: null }),
+        getSnapshot: () => ({ freshness: 'never_succeeded', refreshInProgress: false, stale: true, lastError: null, allowedMaps: [] }),
         refreshServers: async (_trigger, options = {}) => {
           calls.push(options.mapScope);
           return { status: 'success', count: 7 };
@@ -86,7 +87,7 @@ test('POST /api/refresh enforces token protection', async () => {
     {
       config: createConfig({ manualRefreshToken: 'top-secret' }),
       refreshService: {
-        getSnapshot: () => ({ freshness: 'never_succeeded', refreshInProgress: false, stale: true, lastError: null }),
+        getSnapshot: () => ({ freshness: 'never_succeeded', refreshInProgress: false, stale: true, lastError: null, allowedMaps: [] }),
         refreshServers: async () => ({ status: 'success', count: 1 })
       }
     },
@@ -109,7 +110,7 @@ test('POST /api/refresh returns 202 on busy state', async () => {
     {
       config: createConfig(),
       refreshService: {
-        getSnapshot: () => ({ freshness: 'stale', refreshInProgress: true, stale: true, lastError: null }),
+        getSnapshot: () => ({ freshness: 'stale', refreshInProgress: true, stale: true, lastError: null, allowedMaps: [] }),
         refreshServers: async () => ({ status: 'busy' })
       }
     },
@@ -129,7 +130,8 @@ test('GET /health reports never succeeded and stale/degraded', async () => {
         getSnapshot: () => ({
           freshness: 'never_succeeded',
           refreshInProgress: false,
-          lastError: 'boom'
+          lastError: 'boom',
+          allowedMaps: []
         }),
         refreshServers: async () => ({ status: 'success', count: 1 })
       }
@@ -147,7 +149,8 @@ test('GET /health reports never succeeded and stale/degraded', async () => {
             refreshInProgress: false,
             lastSuccessAt: new Date().toISOString(),
             ageMs: 10,
-            lastError: null
+            lastError: null,
+            allowedMaps: []
           })
         }
       });
@@ -168,7 +171,8 @@ test('GET /health reports never succeeded and stale/degraded', async () => {
             refreshInProgress: false,
             lastSuccessAt: new Date(Date.now() - 10_000).toISOString(),
             ageMs: 10_000,
-            lastError: null
+            lastError: null,
+            allowedMaps: []
           })
         }
       });

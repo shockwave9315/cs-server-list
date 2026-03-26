@@ -33,3 +33,17 @@ test('frontend sends current map scope on refresh cycles', async () => {
   assert.match(html, /const activeMapScope = state\.map === 'all' \? 'all' : state\.map;/);
   assert.match(html, /body:\s*JSON\.stringify\(\{\s*mapScope:\s*activeMapScope\s*\}\)/);
 });
+
+test('frontend keeps map selector options based on allowlist payload', async () => {
+  const html = await loadHtml();
+  assert.match(html, /function updateMapOptions\(servers, allowedMaps\)/);
+  assert.match(html, /Array\.isArray\(allowedMaps\) && allowedMaps\.length/);
+  assert.match(html, /updateMapOptions\(currentServers, data\.allowedMaps\);/);
+});
+
+test('frontend shows refresh-in-progress countdown state and schedules from cycle start', async () => {
+  const html = await loadHtml();
+  assert.match(html, /if \(refreshCyclePromise\) \{\s*el\.textContent = 'Odświeżanie\.\.\.';/);
+  assert.match(html, /function scheduleAutoRefresh\(nextCycleStartAt\)/);
+  assert.match(html, /const nextCycleStart = scheduledCycleStartAt \+ intervalMs;/);
+});
